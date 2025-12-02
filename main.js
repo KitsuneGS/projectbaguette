@@ -1,13 +1,19 @@
-/* Project Baguette – Rhythm Engine v5
-   Patches:
-   ✔ Correct 4-note cap (oldest sorted)
-   ✔ Staggered timing (±60ms jitter)
-   ✔ Adaptive travel speed
-   ✔ Sparkle particle system
-   ✔ Ghost shimmer
-   ✔ Trail shimmer
-   ✔ Early/Late MISS judgment
-   ✔ Adaptive APPROACH_TIME = 1.4 + (240 / BPM)
+/* Project Baguette – Rhythm Engine v7
+   Adds:
+   • Mouse + touch hits (Option E: tap/click on note target)
+   • iOS-friendly touch events (touchstart/touchmove)
+   • Optional haptics on COOL/FINE (if supported)
+
+   Keeps:
+   • WASD button-notes
+   • Ghost targets
+   • Trails
+   • Hitbursts
+   • Particles
+   • Early/Late MISS
+   • Max 4 notes on-screen (sorted)
+   • Adaptive APPROACH_TIME = 1.4 + (240 / BPM)
+   • BPM-synced flicker
 */
 
 const canvas = document.getElementById("game");
@@ -60,6 +66,9 @@ let lastHitTime = 0;
 
 let nextBeatTime = 1.0;
 let beatIndex = 0;
+
+// global BPM pulse for visuals
+let beatPulse = 1.0;
 
 // ========= UTILS =========
 function getSongTime() {
@@ -150,8 +159,8 @@ function generateNotes(songTime) {
     for (let sub = 0; sub < 4; sub++) {
       const lane = pattern[sub];
       if (lane !== null) {
-        const jitter = (Math.random()*0.12) - 0.06;
-        const time = nextBeatTime + sub*(BEAT/4) + jitter;
+        const jitter = (Math.random() * 0.12) - 0.06; // ±60ms
+        const time = nextBeatTime + sub * (BEAT / 4) + jitter;
         createNote(lane, time);
       }
     }
@@ -163,6 +172,7 @@ function generateNotes(songTime) {
 
 // ========= INPUT =========
 const keysDown = new Set();
+
 window.addEventListener("keydown", e => {
   const k = e.key.toLowerCase();
   if (!keysDown.has(k)) {
@@ -171,6 +181,32 @@ window.addEventListener("keydown", e => {
   }
 });
 window.addEventListener("keyup", e => keysDown.delete(e.key.toLowerCase()));
+
+// Mouse: click on target
+canvas.addEventListener("mousedown", (e) => {
+  const rect = canvas.getBoundingClientRect();
+  const x = (e.clientX - rect.left) * (canvas.width / rect.width);
+  const y = (e.clientY - rect.top) * (canvas.height / rect.height);
+  handleMouseHit(x, y);
+});
+
+// Touch: tap on target (iOS/Android/WebKit)
+canvas.addEventListener("touchstart", (e) => {
+  const rect = canvas.getBoundingClientRect();
+  const t = e.touches[0];
+
+  const x = (t.clientX - rect.left) * (canvas.width / rect.width);
+  const y = (t.clientY - rect.top) * (canvas.height / rect.height);
+
+  handleMouseHit(x, y);
+
+  e.preventDefault(); // prevent zoom / scroll
+}, { passive: false });
+
+canvas.addEventListener("touchmove", (e) => {
+  // stop scrolling/dragging while playing
+  e.preventDefault();
+}, { passive: false });
 
 function handleKey(key) {
   const laneIndex = LANES.findIndex(l => l.key === key);
@@ -196,7 +232,52 @@ function handleKey(key) {
     registerMiss(best);
 }
 
+// Mouse/touch: Option E – must overlap target circle
+function handleMouseHit(x, y) {
+  const songTime = getSongTime();
+  const baseR = Math.min(width, height) * 0.045;
+
+  let best = null;
+  let bestScore = Infinity;
+
+  for (const n of notes) {
+    if (n.judged) continue;
+
+    const dx = x - n.targetX;
+    const dy = y - n.targetY;
+    const dist = Math.hypot(dx, dy);
+
+    if (dist > baseR * 1.2) continue; // must be near circle
+
+    const timeDiff = Math.abs(n.time - songTime);
+
+    // mostly time-based, distance as tie-breaker
+    const score = timeDiff + dist / 1000;
+    if (score < bestScore) {
+      bestScore = score;
+      best = n;
+    }
+  }
+
+  if (!best) return;
+
+  const diff = Math.abs(best.time - songTime);
+
+  if (diff <= HIT_WINDOW_PERFECT)
+    registerHit(best, "COOL", 300);
+  else if (diff <= HIT_WINDOW_GOOD)
+    registerHit(best, "FINE", 100);
+  else if (diff <= 0.35)
+    registerMiss(best);
+}
+
 // ========= HIT / MISS =========
+function maybeVibrate(pattern) {
+  if (navigator.vibrate) {
+    navigator.vibrate(pattern);
+  }
+}
+
 function registerHit(n, label, baseScore) {
   const t = getSongTime();
   n.judged = true;
@@ -210,6 +291,13 @@ function registerHit(n, label, baseScore) {
   lastHitTime = t;
 
   addParticles(n.targetX, n.targetY, LANES[n.lane].color);
+
+  // tiny haptic nudge on hit (if supported)
+  if (label === "COOL") {
+    maybeVibrate(20);
+  } else if (label === "FINE") {
+    maybeVibrate(10);
+  }
 }
 
 function registerMiss(n) {
@@ -221,6 +309,9 @@ function registerMiss(n) {
   combo = 0;
   lastHitText = "MISS";
   lastHitTime = t;
+
+  // slightly stronger miss buzz (optional)
+  maybeVibrate([10, 40, 10]);
 }
 
 // ========= VISUALS =========
@@ -229,18 +320,18 @@ function drawGhostTarget(note, baseR) {
   const approach = Math.max(0, Math.min(1, 1 - dt / APPROACH_TIME));
 
   ctx.save();
-  ctx.globalAlpha = 0.18 + approach * 0.22;
+  ctx.globalAlpha = 0.18 + beatPulse * 0.22;
   ctx.strokeStyle = LANES[note.lane].color;
   ctx.lineWidth = 3;
   ctx.beginPath();
   ctx.arc(note.targetX, note.targetY, baseR * 0.9, 0, Math.PI * 2);
   ctx.stroke();
 
-  // ✨ ghost sparkle
-  ctx.globalAlpha = 0.10 + Math.random()*0.10;
+  // BPM-synced ghost shimmer
+  ctx.globalAlpha = 0.05 + 0.10 * beatPulse;
   ctx.lineWidth = 1.5;
   ctx.beginPath();
-  ctx.arc(note.targetX, note.targetY, baseR*(0.7 + Math.random()*0.3), 0, Math.PI*2);
+  ctx.arc(note.targetX, note.targetY, baseR * (0.7 + 0.3 * beatPulse), 0, Math.PI * 2);
   ctx.stroke();
   ctx.restore();
 }
@@ -251,14 +342,14 @@ function drawTrail(note, x, y) {
   const dx = note.targetX - note.spawnX;
   const dy = note.targetY - note.spawnY;
   const len = Math.hypot(dx, dy);
-  const nx = dx/len, ny = dy/len;
+  const nx = dx / len, ny = dy / len;
 
   const trailLen = 130;
   const tx = x - nx * trailLen;
   const ty = y - ny * trailLen;
 
   ctx.save();
-  ctx.globalAlpha = 0.25 + Math.random()*0.12;  // ✨ shimmer
+  ctx.globalAlpha = 0.25 + 0.15 * beatPulse;  // BPM-synced shimmer
   ctx.strokeStyle = lane.color;
   ctx.lineWidth = 10;
   ctx.lineCap = "round";
@@ -276,15 +367,15 @@ function drawButtonNote(x, y, r, lane) {
   ctx.lineWidth = 6;
 
   ctx.beginPath();
-  ctx.arc(x, y, r, 0, Math.PI*2);
+  ctx.arc(x, y, r, 0, Math.PI * 2);
   ctx.fill();
   ctx.stroke();
 
   ctx.fillStyle = lane.color;
-  ctx.font = `${r*1.2}px Arial Black`;
+  ctx.font = `${r * 1.2}px Arial Black`;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillText(lane.label, x, y + r*0.05);
+  ctx.fillText(lane.label, x, y + r * 0.05);
 
   ctx.restore();
 }
@@ -293,15 +384,14 @@ function drawHitburst(note, age, baseR) {
   const lane = LANES[note.lane];
   const prog = age / HIT_FADE_TIME;
 
-  const r = baseR*(1 + prog*2.2);
+  const r = baseR * (1 + prog * 2.2);
   const alpha = 1 - prog;
 
   ctx.save();
   ctx.globalAlpha = alpha;
   ctx.fillStyle = lane.color;
-
   ctx.beginPath();
-  ctx.arc(note.targetX, note.targetY, r, 0, Math.PI*2);
+  ctx.arc(note.targetX, note.targetY, r, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
 }
@@ -311,23 +401,27 @@ let fps = 0;
 let lastFrame = performance.now();
 
 function draw(songTime) {
-  ctx.clearRect(0,0,width,height);
+  ctx.clearRect(0, 0, width, height);
+
+  // BPM pulse
+  const beatPhase = (songTime % BEAT) / BEAT;
+  beatPulse = 0.5 + 0.5 * Math.sin(beatPhase * Math.PI * 2);
 
   // ===== sorted 4-note limit =====
   const activeSorted = notes
     .filter(n => !n.judged)
-    .sort((a,b)=>a.time - b.time);
+    .sort((a, b) => a.time - b.time);
 
   if (activeSorted.length > 4) {
     const cut = activeSorted.length - 4;
-    const oldest = activeSorted.slice(0,cut);
+    const oldest = activeSorted.slice(0, cut);
     for (const n of oldest) registerMiss(n);
   }
 
-  ctx.fillStyle = "rgba(0,0,0,0.22)";
-  ctx.fillRect(0,0,width,height);
+  ctx.fillStyle = "rgba(0, 0, 0, 0.22)";
+  ctx.fillRect(0, 0, width, height);
 
-  const baseR = Math.min(width,height)*0.045;
+  const baseR = Math.min(width, height) * 0.045;
 
   // ghost targets
   for (const n of notes) drawGhostTarget(n, baseR);
@@ -338,88 +432,95 @@ function draw(songTime) {
     const songT = songTime;
 
     // adaptive travel speed
-    const activeCount = notes.filter(a=>!a.judged).length;
-    const dynApproach = APPROACH_TIME + activeCount*0.12;
+    const activeCount = notes.filter(a => !a.judged).length;
+    const dynApproach = APPROACH_TIME + activeCount * 0.12;
 
     if (!n.judged) {
       const dt = n.time - songT;
       const t = 1 - dt / dynApproach;
       if (t < 0 || t > 1.5) continue;
 
-      const x = lerp(n.spawnX,n.targetX,t);
-      const y = lerp(n.spawnY,n.targetY,t);
+      const x = lerp(n.spawnX, n.targetX, t);
+      const y = lerp(n.spawnY, n.targetY, t);
 
-      drawTrail(n,x,y);
-      drawButtonNote(x,y,baseR,lane);
+      drawTrail(n, x, y);
+      drawButtonNote(x, y, baseR, lane);
 
     } else if (n.effect === "hit") {
       const age = songT - n.effectTime;
-      if (age <= HIT_FADE_TIME) drawHitburst(n,age,baseR);
+      if (age <= HIT_FADE_TIME) drawHitburst(n, age, baseR);
 
     } else if (n.effect === "miss") {
       const age = songT - n.effectTime;
       if (age <= MISS_FADE_TIME) {
-        const fall = age*MISS_FALL_SPEED;
-        const shake = Math.sin(age*MISS_SHAKE_FREQ*Math.PI*2 + n.shakeSeed)*MISS_SHAKE_AMT;
+        const fall = age * MISS_FALL_SPEED;
+        const shake =
+          Math.sin(age * MISS_SHAKE_FREQ * Math.PI * 2 + n.shakeSeed) *
+          MISS_SHAKE_AMT;
 
         const x = n.targetX + shake;
         const y = n.targetY + fall;
 
-        ctx.globalAlpha = 1 - age/MISS_FADE_TIME;
-        drawButtonNote(x,y,baseR,LANES[n.lane]);
+        ctx.globalAlpha = 1 - age / MISS_FADE_TIME;
+        drawButtonNote(x, y, baseR, LANES[n.lane]);
         ctx.globalAlpha = 1;
       }
     }
   }
 
-  // particles
+  // particles (BPM-scaled alpha)
   for (let p of particles) {
-    p.life -= 1/60;
-    p.x += p.vx/60;
-    p.y += p.vy/60;
+    p.life -= 1 / 60;
+    p.x += p.vx / 60;
+    p.y += p.vy / 60;
 
     ctx.save();
-    ctx.globalAlpha = Math.max(0,p.life/0.4);
+    const baseAlpha = Math.max(0, p.life / 0.4);
+    ctx.globalAlpha = baseAlpha * (0.5 + 0.5 * beatPulse);
     ctx.fillStyle = p.color;
-    ctx.fillRect(p.x,p.y,4,4);
+    ctx.fillRect(p.x, p.y, 4, 4);
     ctx.restore();
   }
-  particles = particles.filter(p=>p.life>0);
+  particles = particles.filter(p => p.life > 0);
 
   // HUD
   ctx.fillStyle = "#fff";
   ctx.font = "18px Arial";
   ctx.textAlign = "left";
-  ctx.fillText("Project Baguette",20,30);
-  ctx.fillText("Score: "+score,20,55);
-  ctx.fillText("Combo: "+combo,20,80);
+  ctx.fillText("Project Baguette", 20, 30);
+  ctx.fillText("Score: " + score, 20, 55);
+  ctx.fillText("Combo: " + combo, 20, 80);
 
   const st = songTime;
   if (st - lastHitTime < 0.5 && lastHitText) {
     ctx.font = "32px Arial Black";
     ctx.textAlign = "center";
-    ctx.fillText(lastHitText,width/2,height*0.2);
+    ctx.fillText(lastHitText, width / 2, height * 0.2);
   }
 
-  ctx.fillStyle = "rgba(0,0,0,0.6)";
-  ctx.fillRect(width-190,10,180,70);
+  ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
+  ctx.fillRect(width - 190, 10, 180, 70);
 
   ctx.fillStyle = "#0f0";
   ctx.font = "14px monospace";
-  ctx.fillText(`FPS: ${fps.toFixed(1)}`,width-180,25);
-  ctx.fillText(`Time: ${st.toFixed(3)}s`,width-180,43);
+  ctx.fillText(`FPS: ${fps.toFixed(1)}`, width - 180, 25);
+  ctx.fillText(`Time: ${st.toFixed(3)}s`, width - 180, 43);
 
   const upcoming = notes
-    .filter(n=>!n.judged && n.time >= st)
-    .sort((a,b)=>a.time - b.time)[0];
+    .filter(n => !n.judged && n.time >= st)
+    .sort((a, b) => a.time - b.time)[0];
 
-  ctx.fillText(`NextΔ: ${upcoming ? (upcoming.time-st).toFixed(3) : "---"}`,width-180,61);
+  ctx.fillText(
+    `NextΔ: ${upcoming ? (upcoming.time - st).toFixed(3) : "---"}`,
+    width - 180,
+    61
+  );
 }
 
 // ========= MAIN LOOP =========
 function loop() {
   const now = performance.now();
-  fps = 1000/(now-lastFrame);
+  fps = 1000 / (now - lastFrame);
   lastFrame = now;
 
   const t = getSongTime();
@@ -431,10 +532,10 @@ function loop() {
       registerMiss(n);
   }
 
-  notes = notes.filter(n=>{
+  notes = notes.filter(n => {
     if (!n.judged) return true;
-    if (n.effect==="hit"  && t-n.effectTime <= HIT_FADE_TIME) return true;
-    if (n.effect==="miss" && t-n.effectTime <= MISS_FADE_TIME) return true;
+    if (n.effect === "hit"  && t - n.effectTime <= HIT_FADE_TIME) return true;
+    if (n.effect === "miss" && t - n.effectTime <= MISS_FADE_TIME) return true;
     return false;
   });
 

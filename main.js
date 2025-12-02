@@ -127,12 +127,19 @@ const patternTable = [
 function generateNotes(songTime) {
   while (nextBeatTime < songTime + SPAWN_LOOKAHEAD) {
 
+    // If too many notes exist, delay the entire beat
+    if (notes.filter(n => !n.judged).length >= 4) {
+      nextBeatTime += BEAT;
+      beatIndex++;
+      continue; // skip creating notes this beat
+    }
+
     const measureIndex = Math.floor(beatIndex / 4) % patternTable.length;
     const beatInMeasure = beatIndex % 4;
 
     const beatPattern = patternTable[measureIndex][beatInMeasure];
 
-    // Subdivisions 0–3 (16th notes)
+    // process subdivisions normally
     for (let sub = 0; sub < 4; sub++) {
       const lane = beatPattern[sub];
       if (lane !== null) {

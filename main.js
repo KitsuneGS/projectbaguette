@@ -1,4 +1,11 @@
-// -------------------- CONFIG ----------------------
+/* Project Baguette – Rhythm Engine v2
+   Includes:
+   • Ghost targets (circular, faint, lane-colored)
+   • Trails (faint but bright)
+   • Hitbursts (big lane-colored diva explosions)
+   • Button-shaped notes (W / A / S / D)
+*/
+
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
 
@@ -7,59 +14,63 @@ let height = window.innerHeight;
 canvas.width = width;
 canvas.height = height;
 
+// LANE DEFINITIONS
 const LANES = [
-  { key: "w", name: "Drums",  color: "#ffdd33", dirChar: "↑" },
-  { key: "a", name: "Bass",   color: "#33ff88", dirChar: "←" },
-  { key: "s", name: "Lead",   color: "#ff66aa", dirChar: "↓" },
-  { key: "d", name: "Keys",   color: "#55aaff", dirChar: "→" },
+  { key: "w", label: "W", color: "#FFD447" }, // Up
+  { key: "a", label: "A", color: "#47FFA3" }, // Left
+  { key: "s", label: "S", color: "#FF69B4" }, // Down
+  { key: "d", label: "D", color: "#6AB4FF" }, // Right
 ];
 
-// Rhythm clock (proto-pattern; tweak BPM to taste)
-const BPM = 120;                 // beats per minute
-const BEAT = 60 / BPM;           // seconds per beat
-const SPAWN_LOOKAHEAD = 8.0;     // how many seconds ahead we pre-spawn notes
-
-// Travel time from spawn → target
+// ===== TIMING =====
+const BPM = 120;
+const BEAT = 60 / BPM;
 const APPROACH_TIME = 2.2;
 
-// Timing windows (a bit forgiving)
 const HIT_WINDOW_PERFECT = 0.08;
-const HIT_WINDOW_GOOD    = 0.18;
+const HIT_WINDOW_GOOD = 0.18;
 
-// Effect durations
-const HIT_FADE_TIME  = 0.4;
+const HIT_FADE_TIME = 0.4;
 const MISS_FADE_TIME = 0.6;
 const MISS_FALL_SPEED = 220;
-const MISS_SHAKE_AMT   = 10;
-const MISS_SHAKE_FREQ  = 14;
+const MISS_SHAKE_AMT = 10;
+const MISS_SHAKE_FREQ = 14;
 
-// Internal time base (later we’ll bind to WebAudio)
 let startTime = performance.now() / 1000;
 let running = true;
-
-// Autogen state
-let notes = [];          // will fill dynamically
-let nextBeatTime = 1.0;  // first beat a bit after start
-let beatIndex = 0;       // 0,1,2,3 repeating for W A S D
 
 let score = 0;
 let combo = 0;
 let lastHitText = "";
 let lastHitTime = 0;
 
-let lastFrameTime = performance.now();
-let fps = 0;
+let notes = [];
+let nextBeatTime = 1.0;
+let beatIndex = 0;
 
-// -------------------- NOTE CREATION ----------------------
+// ===== LAYOUT =====
+function updateLayout() {
+  width = window.innerWidth;
+  height = window.innerHeight;
+  canvas.width = width;
+  canvas.height = height;
+}
+window.addEventListener("resize", updateLayout);
+updateLayout();
+
+function getSongTime() {
+  return performance.now() / 1000 - startTime;
+}
+
+// ===== RANDOM TARGET POSITIONING =====
 function createNote(lane, time) {
-  // keep targets away from edges
   const marginX = width * 0.15;
   const marginY = height * 0.15;
-  const cx = width / 2;
-  const cy = height / 2;
-
   const tx = marginX + Math.random() * (width - marginX * 2);
   const ty = marginY + Math.random() * (height - marginY * 2);
+
+  const cx = width / 2;
+  const cy = height / 2;
 
   const dx = tx - cx;
   const dy = ty - cy;
@@ -71,34 +82,32 @@ function createNote(lane, time) {
   const sx = tx - nx * spawnDist;
   const sy = ty - ny * spawnDist;
 
-  const note = {
+  notes.push({
     time,
     lane,
-    hit: false,
-    judged: false,
-    effect: "none",    // "none" | "hit" | "miss"
-    effectTime: 0,
-    missOffset: 0,
-    shakeSeed: Math.random() * Math.PI * 2,
     spawnX: sx,
     spawnY: sy,
     targetX: tx,
     targetY: ty,
-  };
 
-  notes.push(note);
+    hit: false,
+    judged: false,
+    effect: "none",
+    effectTime: 0,
+
+    shakeSeed: Math.random() * Math.PI * 2,
+  });
 }
 
-// Simple repeating pattern: W → A → S → D → repeat
+// ===== AUTO PATTERN =====
 function generateNotes(songTime) {
-  while (nextBeatTime < songTime + SPAWN_LOOKAHEAD) {
-    const laneForBeat = beatIndex % 4; // 0,1,2,3 repeating
+  while (nextBeatTime < songTime + 8.0) {
+    const laneForBeat = beatIndex % 4; // W A S D
     createNote(laneForBeat, nextBeatTime);
 
-    // optional: every 4th beat add a little extra hit (proto “combo”)
     if (beatIndex % 8 === 4) {
-      const extraLane = (laneForBeat + 2) % 4; // opposite direction
-      createNote(extraLane, nextBeatTime + BEAT * 0.25); // 16th after
+      const extra = (laneForBeat + 2) % 4;
+      createNote(extra, nextBeatTime + BEAT * 0.25);
     }
 
     nextBeatTime += BEAT;
@@ -106,65 +115,41 @@ function generateNotes(songTime) {
   }
 }
 
-// -------------------- LAYOUT RESIZE ----------------------
-function updateLayout() {
-  width = window.innerWidth;
-  height = window.innerHeight;
-  canvas.width = width;
-  canvas.height = height;
-  // Newly generated notes will automatically use the new bounds.
-}
-
-window.addEventListener("resize", updateLayout);
-updateLayout();
-
-// -------------------- TIMING ----------------------
-function getSongTime() {
-  if (!running) return 0;
-  return performance.now() / 1000 - startTime;
-}
-
-// -------------------- INPUT (WASD) ----------------
+// ===== INPUT =====
 const keysDown = new Set();
-
 window.addEventListener("keydown", (e) => {
-  const key = e.key.toLowerCase();
-  if (!keysDown.has(key)) {
-    keysDown.add(key);
-    handleKeyPress(key);
+  const k = e.key.toLowerCase();
+  if (!keysDown.has(k)) {
+    keysDown.add(k);
+    handleKey(k);
   }
 });
+window.addEventListener("keyup", (e) => keysDown.delete(e.key.toLowerCase()));
 
-window.addEventListener("keyup", (e) => {
-  keysDown.delete(e.key.toLowerCase());
-});
-
-function handleKeyPress(key) {
-  const laneIndex = LANES.findIndex(l => l.key === key);
+function handleKey(key) {
+  const laneIndex = LANES.findIndex((l) => l.key === key);
   if (laneIndex === -1) return;
 
   const songTime = getSongTime();
-  let bestNote = null;
-  let bestDiff = Infinity;
+  let best = null;
+  let diff = Infinity;
 
-  for (const note of notes) {
-    if (note.judged || note.lane !== laneIndex) continue;
-    const diff = Math.abs(note.time - songTime);
-    if (diff < bestDiff) {
-      bestDiff = diff;
-      bestNote = note;
+  for (const n of notes) {
+    if (!n.judged && n.lane === laneIndex) {
+      const d = Math.abs(n.time - songTime);
+      if (d < diff) {
+        diff = d;
+        best = n;
+      }
     }
   }
 
-  if (!bestNote) return;
+  if (!best) return;
 
-  if (bestDiff <= HIT_WINDOW_PERFECT) {
-    registerHit(bestNote, "COOL", 300);
-  } else if (bestDiff <= HIT_WINDOW_GOOD) {
-    registerHit(bestNote, "FINE", 100);
-  } else {
-    // optional strict miss
-    // registerMiss(bestNote);
+  if (diff <= HIT_WINDOW_PERFECT) {
+    registerHit(best, "COOL", 300);
+  } else if (diff <= HIT_WINDOW_GOOD) {
+    registerHit(best, "FINE", 100);
   }
 }
 
@@ -175,9 +160,8 @@ function registerHit(note, label, baseScore) {
   note.effect = "hit";
   note.effectTime = t;
 
-  combo += 1;
-  const mult = 1 + combo * 0.05;
-  score += Math.floor(baseScore * mult);
+  combo++;
+  score += Math.floor(baseScore * (1 + combo * 0.05));
 
   lastHitText = label;
   lastHitTime = t;
@@ -185,184 +169,213 @@ function registerHit(note, label, baseScore) {
 
 function registerMiss(note) {
   const t = getSongTime();
-  note.hit = false;
   note.judged = true;
   note.effect = "miss";
   note.effectTime = t;
-  note.missOffset = 0;
 
   combo = 0;
   lastHitText = "MISS";
   lastHitTime = t;
 }
 
-// -------------------- GAME LOOP -------------------
+// ===== VISUAL HELPERS =====
+function lerp(a, b, t) {
+  return a + (b - a) * t;
+}
+
+function drawButtonNote(x, y, r, lane) {
+  ctx.save();
+
+  ctx.fillStyle = "rgba(255,255,255,0.9)";
+  ctx.strokeStyle = lane.color;
+  ctx.lineWidth = 6;
+
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.fillStyle = lane.color;
+  ctx.font = `${r * 1.2}px Arial Black`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(lane.label, x, y + r * 0.05);
+
+  ctx.restore();
+}
+
+// GHOST TARGET
+function drawGhostTarget(note, baseR) {
+  const songTime = getSongTime();
+  const dt = note.time - songTime;
+
+  const approach = Math.max(0, Math.min(1, 1 - dt / APPROACH_TIME));
+  const alpha = 0.18 + approach * 0.22;
+
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.strokeStyle = LANES[note.lane].color;
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.arc(note.targetX, note.targetY, baseR * 0.9, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
+}
+
+// TRAILS
+function drawTrail(note, x, y) {
+  const lane = LANES[note.lane];
+  const dx = note.targetX - note.spawnX;
+  const dy = note.targetY - note.spawnY;
+  const len = Math.hypot(dx, dy);
+  const nx = dx / len, ny = dy / len;
+
+  const trailLen = 130;
+  const tx = x - nx * trailLen;
+  const ty = y - ny * trailLen;
+
+  ctx.save();
+  ctx.strokeStyle = lane.color;
+  ctx.globalAlpha = 0.25;
+  ctx.lineWidth = 10;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(tx, ty);
+  ctx.lineTo(x, y);
+  ctx.stroke();
+  ctx.restore();
+}
+
+// HITBURST
+function drawHitburst(note, age, baseR) {
+  const lane = LANES[note.lane];
+  const prog = age / HIT_FADE_TIME;
+
+  const r = baseR * (1 + prog * 2.2);
+  const alpha = 1 - prog;
+
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = lane.color;
+
+  ctx.beginPath();
+  ctx.arc(note.targetX, note.targetY, r, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = "#fff";
+  ctx.font = `${r * 0.8}px Arial Black`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(lane.label, note.targetX, note.targetY);
+
+  ctx.restore();
+}
+
+// ===== DRAW LOOP =====
+let fps = 0;
+let lastFrame = performance.now();
+
 function loop() {
-  if (!running) return;
   const now = performance.now();
-  const deltaMs = now - lastFrameTime;
-  lastFrameTime = now;
-  fps = 1000 / deltaMs;
+  fps = 1000 / (now - lastFrame);
+  lastFrame = now;
 
   const songTime = getSongTime();
-
-  // generate new notes ahead of time
   generateNotes(songTime);
 
-  // auto-miss notes whose good window has passed
-  for (const note of notes) {
-    if (!note.judged && songTime > note.time + HIT_WINDOW_GOOD) {
-      registerMiss(note);
+  // Auto-miss
+  for (const n of notes) {
+    if (!n.judged && songTime > n.time + HIT_WINDOW_GOOD) {
+      registerMiss(n);
     }
   }
 
   draw(songTime);
 
-  // clean up old fully-faded notes so array doesn’t grow forever
-  notes = notes.filter(n => {
+  notes = notes.filter((n) => {
     if (!n.judged) return true;
-    if (n.effect === "hit") {
-      return songTime - n.effectTime <= HIT_FADE_TIME;
-    }
-    if (n.effect === "miss") {
-      return songTime - n.effectTime <= MISS_FADE_TIME;
-    }
+    if (n.effect === "hit" && songTime - n.effectTime <= HIT_FADE_TIME) return true;
+    if (n.effect === "miss" && songTime - n.effectTime <= MISS_FADE_TIME) return true;
     return false;
   });
 
   requestAnimationFrame(loop);
 }
-
 requestAnimationFrame(loop);
-
-// -------------------- RENDERING -------------------
-function lerp(a, b, t) {
-  return a + (b - a) * t;
-}
-
-function drawDiamondNote(x, y, radius, laneIndex, isMiss) {
-  const lane = LANES[laneIndex];
-  const mainColor = isMiss ? "#ff4466" : lane.color;
-  const borderColor = "#ffffff";
-  const side = radius * 1.9;
-
-  ctx.save();
-  ctx.translate(x, y);
-  ctx.rotate(Math.PI / 4);
-
-  ctx.fillStyle = mainColor;
-  ctx.fillRect(-side / 2, -side / 2, side, side);
-
-  ctx.strokeStyle = borderColor;
-  ctx.lineWidth = 3;
-  ctx.strokeRect(-side / 2, -side / 2, side, side);
-
-  ctx.restore();
-
-  ctx.fillStyle = "#000";
-  ctx.font = `${Math.floor(radius * 1.1)}px Arial`;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText(lane.dirChar, x, y);
-}
 
 function draw(songTime) {
   ctx.clearRect(0, 0, width, height);
 
-  const baseRadius = Math.min(width, height) * 0.045;
-
-  // Slight dark overlay over MV
-  ctx.fillStyle = "rgba(0, 0, 0, 0.25)";
+  ctx.fillStyle = "rgba(0,0,0,0.22)";
   ctx.fillRect(0, 0, width, height);
 
-  // Draw notes
-  for (const note of notes) {
-    let x, y, alpha = 1, radius = baseRadius;
-    let showMissText = false;
+  const baseR = Math.min(width, height) * 0.045;
 
-    if (!note.judged) {
-      const dt = note.time - songTime;
+  for (const n of notes) {
+    const lane = LANES[n.lane];
+
+    drawGhostTarget(n, baseR);
+
+    let x, y;
+
+    if (!n.judged) {
+      const dt = n.time - songTime;
       const t = 1 - dt / APPROACH_TIME;
-
       if (t < 0 || t > 1.5) continue;
 
-      x = lerp(note.spawnX, note.targetX, t);
-      y = lerp(note.spawnY, note.targetY, t);
+      x = lerp(n.spawnX, n.targetX, t);
+      y = lerp(n.spawnY, n.targetY, t);
 
-    } else if (note.effect === "hit") {
-      const age = songTime - note.effectTime;
-      if (age > HIT_FADE_TIME) continue;
+      drawTrail(n, x, y);
+      drawButtonNote(x, y, baseR, lane);
 
-      const progress = age / HIT_FADE_TIME;
-      x = note.targetX + (Math.random() - 0.5) * progress * 10;
-      y = note.targetY + (Math.random() - 0.5) * progress * 10;
+    } else if (n.effect === "hit") {
+      const age = songTime - n.effectTime;
+      if (age <= HIT_FADE_TIME) drawHitburst(n, age, baseR);
 
-      radius = baseRadius * (1 - 0.4 * progress);
-      alpha = 1 - progress;
+    } else if (n.effect === "miss") {
+      const age = songTime - n.effectTime;
+      if (age <= MISS_FADE_TIME) {
+        const fall = age * MISS_FALL_SPEED;
+        const shake = Math.sin(age * MISS_SHAKE_FREQ * Math.PI * 2 + n.shakeSeed) * MISS_SHAKE_AMT;
 
-    } else if (note.effect === "miss") {
-      const age = songTime - note.effectTime;
-      if (age > MISS_FADE_TIME) continue;
+        x = n.targetX + shake;
+        y = n.targetY + fall;
 
-      const fall = age * MISS_FALL_SPEED;
-      const shake = Math.sin(age * MISS_SHAKE_FREQ * Math.PI * 2 + note.shakeSeed) * MISS_SHAKE_AMT;
-
-      x = note.targetX + shake;
-      y = note.targetY + fall;
-
-      alpha = 1 - age / MISS_FADE_TIME;
-      showMissText = age < 0.4;
-    } else {
-      continue;
-    }
-
-    ctx.globalAlpha = alpha;
-    drawDiamondNote(x, y, radius, note.lane, note.effect === "miss");
-    ctx.globalAlpha = 1;
-
-    if (showMissText) {
-      ctx.fillStyle = "#ff5555";
-      ctx.font = "18px Arial";
-      ctx.textAlign = "center";
-      ctx.textBaseline = "bottom";
-      ctx.fillText("MISS", x, y - radius * 1.8);
+        const alpha = 1 - age / MISS_FADE_TIME;
+        ctx.globalAlpha = alpha;
+        drawButtonNote(x, y, baseR, lane);
+        ctx.globalAlpha = 1;
+      }
     }
   }
 
   // HUD
-  ctx.fillStyle = "#ffffff";
+  ctx.fillStyle = "#fff";
   ctx.font = "18px Arial";
-  ctx.textAlign = "left";
   ctx.fillText("Project Baguette", 20, 30);
   ctx.fillText("Score: " + score, 20, 55);
   ctx.fillText("Combo: " + combo, 20, 80);
 
-  const st = getSongTime();
-  const timeSinceHit = st - lastHitTime;
-  if (timeSinceHit < 0.5 && lastHitText) {
-    ctx.fillStyle = "#ffffff";
-    ctx.font = "32px Arial";
+  const st = songTime;
+  if (st - lastHitTime < 0.5 && lastHitText) {
+    ctx.font = "32px Arial Black";
     ctx.textAlign = "center";
     ctx.fillText(lastHitText, width / 2, height * 0.2);
   }
 
-  // Debug & real NextΔ logic
   ctx.fillStyle = "rgba(0,0,0,0.6)";
   ctx.fillRect(width - 190, 10, 180, 70);
   ctx.fillStyle = "#0f0";
   ctx.font = "14px monospace";
-  ctx.textAlign = "left";
   ctx.fillText(`FPS: ${fps.toFixed(1)}`, width - 180, 25);
   ctx.fillText(`Time: ${st.toFixed(3)}s`, width - 180, 43);
 
   const upcoming = notes
-    .filter(n => !n.judged && n.time >= st)
+    .filter((n) => !n.judged && n.time >= st)
     .sort((a, b) => a.time - b.time)[0];
 
-  if (upcoming) {
-    const diff = upcoming.time - st;
-    ctx.fillText(`NextΔ: ${diff.toFixed(3)}s`, width - 180, 61);
-  } else {
-    ctx.fillText("NextΔ: ---", width - 180, 61);
-  }
+  if (upcoming)
+    ctx.fillText(`NextΔ: ${(upcoming.time - st).toFixed(3)}s`, width - 180, 61);
+  else ctx.fillText("NextΔ: ---", width - 180, 61);
 }

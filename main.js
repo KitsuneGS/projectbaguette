@@ -129,9 +129,9 @@ function generateNotes(songTime) {
 
     // If too many notes exist, delay the entire beat
     if (notes.filter(n => !n.judged).length >= 4) {
-      nextBeatTime += BEAT;
-      beatIndex++;
-      continue; // skip creating notes this beat
+    nextBeatTime += BEAT;
+    beatIndex++;
+    continue; // skip creating notes this beat
     }
 
     const measureIndex = Math.floor(beatIndex / 4) % patternTable.length;
@@ -321,8 +321,8 @@ function loop() {
 
   // auto-miss
   for (const n of notes) {
-    if (!n.judged && songTime > n.time + HIT_WINDOW_GOOD) {
-      registerMiss(n);
+    if (!n.judged && songTime > n.time + HIT_WINDOW_GOOD + 0.20) {
+    registerMiss(n);
     }
   }
 

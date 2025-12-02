@@ -14,47 +14,33 @@ const LANES = [
   { key: "d", name: "Keys",   color: "#55aaff", dirChar: "→" },
 ];
 
+// Rhythm clock (proto-pattern; tweak BPM to taste)
+const BPM = 120;                 // beats per minute
+const BEAT = 60 / BPM;           // seconds per beat
+const SPAWN_LOOKAHEAD = 8.0;     // how many seconds ahead we pre-spawn notes
+
 // Travel time from spawn → target
 const APPROACH_TIME = 2.2;
 
-// Timing windows (a bit forgiving for laptop keys)
-const HIT_WINDOW_PERFECT = 0.08; // 80 ms
-const HIT_WINDOW_GOOD    = 0.18; // 180 ms
+// Timing windows (a bit forgiving)
+const HIT_WINDOW_PERFECT = 0.08;
+const HIT_WINDOW_GOOD    = 0.18;
 
 // Effect durations
 const HIT_FADE_TIME  = 0.4;
 const MISS_FADE_TIME = 0.6;
-const MISS_FALL_SPEED = 220;   // px/s downward
-const MISS_SHAKE_AMT   = 10;   // px side-to-side
-const MISS_SHAKE_FREQ  = 14;   // oscillations per second
+const MISS_FALL_SPEED = 220;
+const MISS_SHAKE_AMT   = 10;
+const MISS_SHAKE_FREQ  = 14;
 
-// Internal clock for now (will be tied to WebAudio later)
+// Internal time base (later we’ll bind to WebAudio)
 let startTime = performance.now() / 1000;
 let running = true;
 
-// Notes: each gets random target+spawn, plus FX fields
-let notes = [
-  { time: 1.0, lane: 0 },
-  { time: 1.4, lane: 1 },
-  { time: 1.8, lane: 2 },
-  { time: 2.2, lane: 3 },
-  { time: 2.6, lane: 0 },
-  { time: 3.0, lane: 1 },
-  { time: 3.4, lane: 2 },
-  { time: 3.8, lane: 3 },
-].map(n => ({
-  ...n,
-  hit: false,
-  judged: false,
-  effect: "none",   // "none" | "hit" | "miss"
-  effectTime: 0,
-  missOffset: 0,
-  shakeSeed: Math.random() * Math.PI * 2,
-  spawnX: 0,
-  spawnY: 0,
-  targetX: 0,
-  targetY: 0,
-}));
+// Autogen state
+let notes = [];          // will fill dynamically
+let nextBeatTime = 1.0;  // first beat a bit after start
+let beatIndex = 0;       // 0,1,2,3 repeating for W A S D
 
 let score = 0;
 let combo = 0;
@@ -64,42 +50,69 @@ let lastHitTime = 0;
 let lastFrameTime = performance.now();
 let fps = 0;
 
-// -------------------- LAYOUT ----------------------
-function assignNotePaths() {
+// -------------------- NOTE CREATION ----------------------
+function createNote(lane, time) {
+  // keep targets away from edges
+  const marginX = width * 0.15;
+  const marginY = height * 0.15;
   const cx = width / 2;
   const cy = height / 2;
-  const marginX = width * 0.12;
-  const marginY = height * 0.12;
+
+  const tx = marginX + Math.random() * (width - marginX * 2);
+  const ty = marginY + Math.random() * (height - marginY * 2);
+
+  const dx = tx - cx;
+  const dy = ty - cy;
+  const len = Math.hypot(dx, dy) || 1;
+  const nx = dx / len;
+  const ny = dy / len;
+
   const spawnDist = Math.max(width, height) * 0.7;
+  const sx = tx - nx * spawnDist;
+  const sy = ty - ny * spawnDist;
 
-  for (const note of notes) {
-    // random target not too close to edges
-    const tx = marginX + Math.random() * (width - marginX * 2);
-    const ty = marginY + Math.random() * (height - marginY * 2);
+  const note = {
+    time,
+    lane,
+    hit: false,
+    judged: false,
+    effect: "none",    // "none" | "hit" | "miss"
+    effectTime: 0,
+    missOffset: 0,
+    shakeSeed: Math.random() * Math.PI * 2,
+    spawnX: sx,
+    spawnY: sy,
+    targetX: tx,
+    targetY: ty,
+  };
 
-    const dx = tx - cx;
-    const dy = ty - cy;
-    const len = Math.hypot(dx, dy) || 1;
-    const nx = dx / len;
-    const ny = dy / len;
+  notes.push(note);
+}
 
-    // spawn behind the target along the line from center
-    const sx = tx - nx * spawnDist;
-    const sy = ty - ny * spawnDist;
+// Simple repeating pattern: W → A → S → D → repeat
+function generateNotes(songTime) {
+  while (nextBeatTime < songTime + SPAWN_LOOKAHEAD) {
+    const laneForBeat = beatIndex % 4; // 0,1,2,3 repeating
+    createNote(laneForBeat, nextBeatTime);
 
-    note.targetX = tx;
-    note.targetY = ty;
-    note.spawnX = sx;
-    note.spawnY = sy;
+    // optional: every 4th beat add a little extra hit (proto “combo”)
+    if (beatIndex % 8 === 4) {
+      const extraLane = (laneForBeat + 2) % 4; // opposite direction
+      createNote(extraLane, nextBeatTime + BEAT * 0.25); // 16th after
+    }
+
+    nextBeatTime += BEAT;
+    beatIndex++;
   }
 }
 
+// -------------------- LAYOUT RESIZE ----------------------
 function updateLayout() {
   width = window.innerWidth;
   height = window.innerHeight;
   canvas.width = width;
   canvas.height = height;
-  assignNotePaths();
+  // Newly generated notes will automatically use the new bounds.
 }
 
 window.addEventListener("resize", updateLayout);
@@ -131,8 +144,6 @@ function handleKeyPress(key) {
   if (laneIndex === -1) return;
 
   const songTime = getSongTime();
-
-  // closest unjudged note in that lane
   let bestNote = null;
   let bestDiff = Infinity;
 
@@ -148,11 +159,11 @@ function handleKeyPress(key) {
   if (!bestNote) return;
 
   if (bestDiff <= HIT_WINDOW_PERFECT) {
-    registerHit(bestNote, "COOL", 300);   // Diva-ish wording
+    registerHit(bestNote, "COOL", 300);
   } else if (bestDiff <= HIT_WINDOW_GOOD) {
     registerHit(bestNote, "FINE", 100);
   } else {
-    // too early/late: optional strict miss
+    // optional strict miss
     // registerMiss(bestNote);
   }
 }
@@ -195,7 +206,10 @@ function loop() {
 
   const songTime = getSongTime();
 
-  // auto-miss when the good window is gone
+  // generate new notes ahead of time
+  generateNotes(songTime);
+
+  // auto-miss notes whose good window has passed
   for (const note of notes) {
     if (!note.judged && songTime > note.time + HIT_WINDOW_GOOD) {
       registerMiss(note);
@@ -203,6 +217,19 @@ function loop() {
   }
 
   draw(songTime);
+
+  // clean up old fully-faded notes so array doesn’t grow forever
+  notes = notes.filter(n => {
+    if (!n.judged) return true;
+    if (n.effect === "hit") {
+      return songTime - n.effectTime <= HIT_FADE_TIME;
+    }
+    if (n.effect === "miss") {
+      return songTime - n.effectTime <= MISS_FADE_TIME;
+    }
+    return false;
+  });
+
   requestAnimationFrame(loop);
 }
 
@@ -217,13 +244,11 @@ function drawDiamondNote(x, y, radius, laneIndex, isMiss) {
   const lane = LANES[laneIndex];
   const mainColor = isMiss ? "#ff4466" : lane.color;
   const borderColor = "#ffffff";
-
   const side = radius * 1.9;
 
-  // diamond
   ctx.save();
   ctx.translate(x, y);
-  ctx.rotate(Math.PI / 4); // square → diamond
+  ctx.rotate(Math.PI / 4);
 
   ctx.fillStyle = mainColor;
   ctx.fillRect(-side / 2, -side / 2, side, side);
@@ -234,7 +259,6 @@ function drawDiamondNote(x, y, radius, laneIndex, isMiss) {
 
   ctx.restore();
 
-  // arrow symbol
   ctx.fillStyle = "#000";
   ctx.font = `${Math.floor(radius * 1.1)}px Arial`;
   ctx.textAlign = "center";
@@ -247,20 +271,20 @@ function draw(songTime) {
 
   const baseRadius = Math.min(width, height) * 0.045;
 
-  // Slight overlay to make notes pop over MV
+  // Slight dark overlay over MV
   ctx.fillStyle = "rgba(0, 0, 0, 0.25)";
   ctx.fillRect(0, 0, width, height);
 
-  // Notes
+  // Draw notes
   for (const note of notes) {
     let x, y, alpha = 1, radius = baseRadius;
     let showMissText = false;
 
     if (!note.judged) {
-      const dt = note.time - songTime;       // seconds until hit
-      const t = 1 - dt / APPROACH_TIME;      // 0→1
+      const dt = note.time - songTime;
+      const t = 1 - dt / APPROACH_TIME;
 
-      if (t < 0 || t > 1.5) continue;        // off-screen
+      if (t < 0 || t > 1.5) continue;
 
       x = lerp(note.spawnX, note.targetX, t);
       y = lerp(note.spawnY, note.targetY, t);
@@ -322,7 +346,7 @@ function draw(songTime) {
     ctx.fillText(lastHitText, width / 2, height * 0.2);
   }
 
-  // debug
+  // Debug & real NextΔ logic
   ctx.fillStyle = "rgba(0,0,0,0.6)";
   ctx.fillRect(width - 190, 10, 180, 70);
   ctx.fillStyle = "#0f0";
@@ -330,9 +354,13 @@ function draw(songTime) {
   ctx.textAlign = "left";
   ctx.fillText(`FPS: ${fps.toFixed(1)}`, width - 180, 25);
   ctx.fillText(`Time: ${st.toFixed(3)}s`, width - 180, 43);
-  const nextNote = notes.find(n => !n.judged);
-  if (nextNote) {
-    const diff = nextNote.time - st;
+
+  const upcoming = notes
+    .filter(n => !n.judged && n.time >= st)
+    .sort((a, b) => a.time - b.time)[0];
+
+  if (upcoming) {
+    const diff = upcoming.time - st;
     ctx.fillText(`NextΔ: ${diff.toFixed(3)}s`, width - 180, 61);
   } else {
     ctx.fillText("NextΔ: ---", width - 180, 61);

@@ -1,25 +1,35 @@
-/* Project Baguette – Rhythm Engine v2
+/* Project Baguette – Rhythm Engine v3 (Diva subdivision + VFX)
    Includes:
-   • Ghost targets (circular, faint, lane-colored)
+   • Button-shaped notes (W/A/S/D)
+   • Ghost targets (circular, fade-in)
    • Trails (faint but bright)
-   • Hitbursts (big lane-colored diva explosions)
-   • Button-shaped notes (W / A / S / D)
+   • Hitbursts (big diva explosions)
+   • Diva-style subdivision generator (no multinotes)
 */
 
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
 
+// ===== LAYOUT =====
 let width = window.innerWidth;
 let height = window.innerHeight;
 canvas.width = width;
 canvas.height = height;
 
-// LANE DEFINITIONS
+function updateLayout() {
+  width = window.innerWidth;
+  height = window.innerHeight;
+  canvas.width = width;
+  canvas.height = height;
+}
+window.addEventListener("resize", updateLayout);
+
+// ===== LANES =====
 const LANES = [
-  { key: "w", label: "W", color: "#FFD447" }, // Up
-  { key: "a", label: "A", color: "#47FFA3" }, // Left
-  { key: "s", label: "S", color: "#FF69B4" }, // Down
-  { key: "d", label: "D", color: "#6AB4FF" }, // Right
+  { key: "w", label: "W", color: "#FFD447" },
+  { key: "a", label: "A", color: "#47FFA3" },
+  { key: "s", label: "S", color: "#FF69B4" },
+  { key: "d", label: "D", color: "#6AB4FF" },
 ];
 
 // ===== TIMING =====
@@ -36,36 +46,32 @@ const MISS_FALL_SPEED = 220;
 const MISS_SHAKE_AMT = 10;
 const MISS_SHAKE_FREQ = 14;
 
+const SPAWN_LOOKAHEAD = 8.0;
+
 let startTime = performance.now() / 1000;
-let running = true;
+let notes = [];
+let nextBeatTime = 1.0;
+let beatIndex = 0;
 
 let score = 0;
 let combo = 0;
 let lastHitText = "";
 let lastHitTime = 0;
 
-let notes = [];
-let nextBeatTime = 1.0;
-let beatIndex = 0;
-
-// ===== LAYOUT =====
-function updateLayout() {
-  width = window.innerWidth;
-  height = window.innerHeight;
-  canvas.width = width;
-  canvas.height = height;
-}
-window.addEventListener("resize", updateLayout);
-updateLayout();
-
+// ===== UTILS =====
 function getSongTime() {
   return performance.now() / 1000 - startTime;
 }
 
-// ===== RANDOM TARGET POSITIONING =====
+function lerp(a, b, t) {
+  return a + (b - a) * t;
+}
+
+// ===== NOTE CREATION =====
 function createNote(lane, time) {
   const marginX = width * 0.15;
   const marginY = height * 0.15;
+
   const tx = marginX + Math.random() * (width - marginX * 2);
   const ty = marginY + Math.random() * (height - marginY * 2);
 
@@ -90,7 +96,6 @@ function createNote(lane, time) {
     targetX: tx,
     targetY: ty,
 
-    hit: false,
     judged: false,
     effect: "none",
     effectTime: 0,
@@ -99,15 +104,41 @@ function createNote(lane, time) {
   });
 }
 
-// ===== AUTO PATTERN =====
-function generateNotes(songTime) {
-  while (nextBeatTime < songTime + 8.0) {
-    const laneForBeat = beatIndex % 4; // W A S D
-    createNote(laneForBeat, nextBeatTime);
+// ===== DIVA SUBDIVISION PATTERNS =====
+// patternTable[measure][beat][subdivision] = laneIndex or null
+const patternTable = [
+  // Measure 0 — simple
+  [
+    [0, null, null, null],      // Beat 1: W---
+    [1, null, 2,    null],      // Beat 2: A-S-
+    [null, null, null, null],   // Beat 3: ----
+    [3, null, null, null],      // Beat 4: D---
+  ],
 
-    if (beatIndex % 8 === 4) {
-      const extra = (laneForBeat + 2) % 4;
-      createNote(extra, nextBeatTime + BEAT * 0.25);
+  // Measure 1 — variation
+  [
+    [0, null, 1, null],         // W - A -
+    [null, null, 2, null],      // -- S -
+    [1, null, null, 3],         // A - - D
+    [null, 0, null, null],      // - W - -
+  ],
+];
+
+function generateNotes(songTime) {
+  while (nextBeatTime < songTime + SPAWN_LOOKAHEAD) {
+
+    const measureIndex = Math.floor(beatIndex / 4) % patternTable.length;
+    const beatInMeasure = beatIndex % 4;
+
+    const beatPattern = patternTable[measureIndex][beatInMeasure];
+
+    // Subdivisions 0–3 (16th notes)
+    for (let sub = 0; sub < 4; sub++) {
+      const lane = beatPattern[sub];
+      if (lane !== null) {
+        const subdivisionTime = nextBeatTime + sub * (BEAT / 4);
+        createNote(lane, subdivisionTime);
+      }
     }
 
     nextBeatTime += BEAT;
@@ -131,6 +162,7 @@ function handleKey(key) {
   if (laneIndex === -1) return;
 
   const songTime = getSongTime();
+
   let best = null;
   let diff = Infinity;
 
@@ -146,16 +178,13 @@ function handleKey(key) {
 
   if (!best) return;
 
-  if (diff <= HIT_WINDOW_PERFECT) {
-    registerHit(best, "COOL", 300);
-  } else if (diff <= HIT_WINDOW_GOOD) {
-    registerHit(best, "FINE", 100);
-  }
+  if (diff <= HIT_WINDOW_PERFECT) registerHit(best, "COOL", 300);
+  else if (diff <= HIT_WINDOW_GOOD) registerHit(best, "FINE", 100);
 }
 
 function registerHit(note, label, baseScore) {
   const t = getSongTime();
-  note.hit = true;
+
   note.judged = true;
   note.effect = "hit";
   note.effectTime = t;
@@ -169,6 +198,7 @@ function registerHit(note, label, baseScore) {
 
 function registerMiss(note) {
   const t = getSongTime();
+
   note.judged = true;
   note.effect = "miss";
   note.effectTime = t;
@@ -178,33 +208,9 @@ function registerMiss(note) {
   lastHitTime = t;
 }
 
-// ===== VISUAL HELPERS =====
-function lerp(a, b, t) {
-  return a + (b - a) * t;
-}
+// ===== VISUALS =====
 
-function drawButtonNote(x, y, r, lane) {
-  ctx.save();
-
-  ctx.fillStyle = "rgba(255,255,255,0.9)";
-  ctx.strokeStyle = lane.color;
-  ctx.lineWidth = 6;
-
-  ctx.beginPath();
-  ctx.arc(x, y, r, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.stroke();
-
-  ctx.fillStyle = lane.color;
-  ctx.font = `${r * 1.2}px Arial Black`;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText(lane.label, x, y + r * 0.05);
-
-  ctx.restore();
-}
-
-// GHOST TARGET
+// ghost targets
 function drawGhostTarget(note, baseR) {
   const songTime = getSongTime();
   const dt = note.time - songTime;
@@ -222,9 +228,10 @@ function drawGhostTarget(note, baseR) {
   ctx.restore();
 }
 
-// TRAILS
+// trails
 function drawTrail(note, x, y) {
   const lane = LANES[note.lane];
+
   const dx = note.targetX - note.spawnX;
   const dy = note.targetY - note.spawnY;
   const len = Math.hypot(dx, dy);
@@ -246,7 +253,29 @@ function drawTrail(note, x, y) {
   ctx.restore();
 }
 
-// HITBURST
+// button-shaped notes
+function drawButtonNote(x, y, r, lane) {
+  ctx.save();
+
+  ctx.fillStyle = "rgba(255,255,255,0.9)";
+  ctx.strokeStyle = lane.color;
+  ctx.lineWidth = 6;
+
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.fillStyle = lane.color;
+  ctx.font = `${r * 1.2}px Arial Black`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(lane.label, x, y + r * 0.05);
+
+  ctx.restore();
+}
+
+// hitburst
 function drawHitburst(note, age, baseR) {
   const lane = LANES[note.lane];
   const prog = age / HIT_FADE_TIME;
@@ -283,7 +312,7 @@ function loop() {
   const songTime = getSongTime();
   generateNotes(songTime);
 
-  // Auto-miss
+  // auto-miss
   for (const n of notes) {
     if (!n.judged && songTime > n.time + HIT_WINDOW_GOOD) {
       registerMiss(n);
@@ -294,7 +323,7 @@ function loop() {
 
   notes = notes.filter((n) => {
     if (!n.judged) return true;
-    if (n.effect === "hit" && songTime - n.effectTime <= HIT_FADE_TIME) return true;
+    if (n.effect === "hit"  && songTime - n.effectTime <= HIT_FADE_TIME) return true;
     if (n.effect === "miss" && songTime - n.effectTime <= MISS_FADE_TIME) return true;
     return false;
   });
@@ -303,6 +332,7 @@ function loop() {
 }
 requestAnimationFrame(loop);
 
+// ===== DRAW =====
 function draw(songTime) {
   ctx.clearRect(0, 0, width, height);
 
@@ -366,6 +396,7 @@ function draw(songTime) {
 
   ctx.fillStyle = "rgba(0,0,0,0.6)";
   ctx.fillRect(width - 190, 10, 180, 70);
+
   ctx.fillStyle = "#0f0";
   ctx.font = "14px monospace";
   ctx.fillText(`FPS: ${fps.toFixed(1)}`, width - 180, 25);

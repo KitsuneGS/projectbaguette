@@ -6,6 +6,39 @@
    • Debug via ?debug=1 only
 */
 
+// ======== START SCREEN + SAFARI-SAFE PLAYBACK ========
+const startScreen = document.getElementById("startScreen");
+const mv = document.getElementById("mv");
+const audio = document.getElementById("song");
+
+const DEBUG = new URLSearchParams(location.search).get("debug") === "1";
+
+if (DEBUG) {
+  startScreen.style.display = "none";
+} else {
+  const begin = (e) => {
+    e.preventDefault();
+    beginPlayback();
+  };
+  startScreen.addEventListener("click", begin, { once: true });
+  startScreen.addEventListener("touchstart", begin, { once: true, passive:false });
+}
+
+async function beginPlayback() {
+  // required to unlock audio on iOS
+  try { await audio.play(); }
+  catch(e) { console.warn("iOS stalled audio until gesture"); }
+
+  // reveal video *after* audio starts
+  audio.addEventListener("playing", () => {
+    mv.loop = true;
+    mv.style.display = "block";
+    requestAnimationFrame(() => { mv.style.opacity = 1; });
+  }, { once: true });
+
+  startScreen.style.display = "none";
+}
+
 ////////////////////////////////////////////////////////////
 // TINY TAP-TO-START OVERLAY
 ////////////////////////////////////////////////////////////

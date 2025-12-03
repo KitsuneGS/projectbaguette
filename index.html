@@ -44,10 +44,15 @@
 <body>
 
   <!-- Background MV -->
-  <video id="mv"
-         src="assets/defaults/mv-default.mp4"
-         muted
-         playsinline></video>
+ <video id="mv"
+       src="assets/defaults/mv-default.mp4"
+       muted
+       playsinline
+       preload="auto"
+       webkit-playsinline
+       x-webkit-airplay="allow"
+       disablepictureinpicture>
+</video>
 
   <!-- Song (MP3 is recommended for iOS) -->
   <audio id="song"

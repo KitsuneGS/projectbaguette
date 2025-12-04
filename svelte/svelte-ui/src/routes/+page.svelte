@@ -65,7 +65,6 @@
   }
 
   function fakeGoogleSignIn() {
-    // Placeholder: here you'd trigger "Sign in with Google".
     const newProfile: Profile = {
       id: `google-${Date.now()}`,
       name: "Google Player",
@@ -87,7 +86,6 @@
 
   function handleSongClick(song: Song) {
     selectedSongId = song.id;
-    // Later: transition into canvas rhythm engine with this song
     console.log("Selected song:", song);
   }
 
@@ -95,32 +93,26 @@
     const input = event.currentTarget as HTMLInputElement;
     if (!input.files) return;
 
-    const files = Array.from(input.files);
-    files.forEach((file) => {
+    Array.from(input.files).forEach((file) => {
       const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
       const allowed = ["mp3", "ogg", "wav", "flac"];
 
-      if (!allowed.includes(ext)) {
-        console.warn("Skipped unsupported file:", file.name);
-        return;
-      }
+      if (!allowed.includes(ext)) return;
 
       const id = `import-${Date.now()}-${file.name}`;
-      const newSong: Song = {
-        id,
-        title: file.name.replace(/\.[^.]+$/, ""),
-        artist: "Imported",
-        duration: "--:--",
-        isImported: true
-      };
-
-      songs = [...songs, newSong];
-
-      // You can stash URL.createObjectURL(file) somewhere later
-      console.log("Imported song file:", file);
+      songs = [
+        ...songs,
+        {
+          id,
+          title: file.name.replace(/\.[^.]+$/, ""),
+          artist: "Imported",
+          duration: "--:--",
+          isImported: true
+        }
+      ];
+      console.log("Imported:", file);
     });
 
-    // Reset input so re-uploading same file works
     input.value = "";
   }
 </script>
@@ -170,7 +162,6 @@
           </button>
         {/each}
 
-        <!-- Add profile -->
         <button class="card profile-card add-card" on:click={openAddProfile}>
           <div class="avatar avatar-add">+</div>
           <div class="profile-info">
@@ -331,6 +322,8 @@
 </div>
 
 <style>
+  /* ************ GLOBAL ************ */
+
   :global(body) {
     margin: 0;
     font-family: system-ui, -apple-system, BlinkMacSystemFont, "Comfortaa",
@@ -384,6 +377,8 @@
     z-index: -1;
   }
 
+  /* ************ SCREENS ************ */
+
   .screen {
     position: relative;
     padding: 24px clamp(16px, 4vw, 40px) 32px;
@@ -399,6 +394,8 @@
     min-height: 100vh;
     text-align: center;
   }
+
+  /* ************ SPLASH ************ */
 
   .logo-lockup {
     cursor: pointer;
@@ -482,6 +479,8 @@
     font-size: 0.85rem;
     opacity: 0.8;
   }
+
+  /* ************ PLAYER SELECT ************ */
 
   .top-bar {
     display: flex;
@@ -596,6 +595,8 @@
     border-color: rgba(255, 255, 255, 0.22);
   }
 
+  /* ************ MODAL ************ */
+
   .modal-backdrop {
     position: fixed;
     inset: 0;
@@ -642,7 +643,6 @@
     cursor: pointer;
     margin-bottom: 8px;
   }
-
   .g-logo {
     width: 20px;
     height: 20px;
@@ -654,11 +654,6 @@
       #fbbc05 180deg 270deg,
       #ea4335 270deg 360deg
     );
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 0.7rem;
-    color: #fff;
   }
 
   .ghost-btn {
@@ -676,6 +671,8 @@
     font-size: 0.75rem;
     margin-bottom: 8px;
   }
+
+  /* ************ MENUS ************ */
 
   .menu-list {
     margin-top: 8px;
@@ -739,6 +736,8 @@
     font-size: 1.3rem;
     opacity: 0.8;
   }
+
+  /* ************ SONG SELECT ************ */
 
   .song-layout {
     margin-top: 8px;
@@ -873,6 +872,9 @@
     font-size: 0.75rem;
     color: #c8c1ff;
   }
+
+
+  /* ************ ANIM ************ */
 
   @keyframes pulse {
     0% {

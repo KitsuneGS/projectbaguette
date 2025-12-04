@@ -2,12 +2,12 @@ name: Deploy UI to GitHub Pages
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: write
+  pages: write
 
 jobs:
   build:
@@ -21,26 +21,21 @@ jobs:
         with:
           node-version: 22
 
-      - name: 📁 Install Svelte UI deps
+      - name: 📁 Install deps
+        working-directory: ./svelte/svelte-ui
+        run: npm install
+
+      - name: 🏗️ Build
+        working-directory: ./svelte/svelte-ui
+        run: npm run build
+
+      - name: 🚚 Move output
         run: |
-          cd svelte/svelte-ui
-          npm install
+          rm -rf docs
+          mkdir -p docs/projectbaguette
+          cp -r svelte/svelte-ui/build/* docs/projectbaguette
 
-      - name: 🏗️ Build Svelte UI
-        run: |
-          cd svelte/svelte-ui
-          npx svelte-kit build
-
-          # Clean old docs
-          rm -rf ../../docs
-
-          # Create proper subfolder matching GitHub Pages path
-          mkdir -p ../../docs/projectbaguette
-
-          # Copy build
-          cp -r build/* ../../docs/projectbaguette
-
-      - name: 🚀 Deploy to GitHub Pages
+      - name: 🚀 Deploy
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}

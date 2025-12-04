@@ -1,15 +1,17 @@
 import adapter from '@sveltejs/adapter-static';
 
 const config = {
-  preprocess: vitePreprocess(),
-
-  kit: {
-    adapter: adapter({
-      pages: 'build',
-      assets: 'build',
-      fallback: 'index.html'
-    })
-  }
+	kit: {
+		adapter: adapter({
+			fallback: 'index.html'
+		}),
+		paths: {
+			base: '/projectbaguette'
+		},
+		prerender: {
+			handleMissingId: 'ignore'
+		}
+	}
 };
 
 export default config;

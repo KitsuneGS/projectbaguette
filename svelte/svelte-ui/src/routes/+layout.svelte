@@ -1,12 +1,9 @@
 <script lang="ts">
-	import favicon from 'svelte/svelte-ui/static/assets/favicon.png';
-
-	let { children } = $props();
+	import { base } from '$app/paths';
 </script>
 
 <svelte:head>
-	<link rel="icon" href={favicon} />
+	<link rel="icon" href={`${base}/assets/favicon.png`} />
 </svelte:head>
 
-{@render children()}
-
+<slot />

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import favicon from 'projectbaguette/assets/favicon.png';
+	import favicon from 'svelte/svelte-ui/static/assets/favicon.png';
 
 	let { children } = $props();
 </script>

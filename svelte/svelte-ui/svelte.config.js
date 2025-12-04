@@ -1,17 +1,19 @@
 import adapter from '@sveltejs/adapter-static';
-import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
+import { vitePreprocess } from '@sveltejs/kit/vite';
 
 const config = {
-  preprocess: vitePreprocess(),
-  kit: {
-    adapter: adapter({
-      fallback: 'index.html', // 👈 required for SPA routing
-      strict: false
-    }),
-    paths: {
-      base: '/projectbaguette'
-    }
-  }
+	preprocess: vitePreprocess(),
+	kit: {
+		adapter: adapter({
+			fallback: 'index.html'
+		}),
+		paths: {
+			base: process.env.NODE_ENV === 'production' ? '/projectbaguette' : ''
+		},
+		alias: {
+			$assets: 'static/assets'
+		}
+	}
 };
 
 export default config;

@@ -89,6 +89,8 @@
     selectedSongId = song.id;
     // Later: transition into canvas rhythm engine with this song
     console.log("Selected song:", song);
+
+   window.startRhythmGame();
   }
 
   function handleSongImport(event: Event) {

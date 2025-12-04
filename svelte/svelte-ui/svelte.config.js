@@ -9,11 +9,9 @@ const config = {
 		adapter: adapter({
 			fallback: 'index.html'
 		}),
-		paths: {
-			base: process.env.NODE_ENV === 'production'
-				? '/projectbaguette'
-				: ''
-		},
+	paths: {
+    base: process.env.NODE_ENV === 'production' ? '/projectbaguette' : ''
+}
 		prerender: {
 			handleHttpError: 'ignore'
 		}

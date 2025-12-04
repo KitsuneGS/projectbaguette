@@ -12,8 +12,8 @@
   };
 
   let profiles: Profile[] = [
-    { id: "guest", name: "Guest", avatarColor: "#ff9fbf" },
-    { id: "player1", name: "Player 1", avatarColor: "#9fdfff" }
+    { id: "guest", name: "Guest", avatarColor: "#ffd5e5" },
+    { id: "player1", name: "Segfault", avatarColor: "#d5f0ff" }
   ];
 
   let selectedProfile: Profile | null = null;
@@ -65,10 +65,11 @@
   }
 
   function fakeGoogleSignIn() {
+    // Placeholder: here you'd trigger "Sign in with Google".
     const newProfile: Profile = {
       id: `google-${Date.now()}`,
       name: "Google Player",
-      avatarColor: "#c0a8ff"
+      avatarColor: "#e0d5ff"
     };
     profiles = [...profiles, newProfile];
     selectedProfile = newProfile;
@@ -86,6 +87,7 @@
 
   function handleSongClick(song: Song) {
     selectedSongId = song.id;
+    // Later: transition into canvas rhythm engine with this song
     console.log("Selected song:", song);
   }
 
@@ -93,26 +95,30 @@
     const input = event.currentTarget as HTMLInputElement;
     if (!input.files) return;
 
-    Array.from(input.files).forEach((file) => {
+    const files = Array.from(input.files);
+    files.forEach((file) => {
       const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
       const allowed = ["mp3", "ogg", "wav", "flac"];
 
-      if (!allowed.includes(ext)) return;
+      if (!allowed.includes(ext)) {
+        console.warn("Skipped unsupported file:", file.name);
+        return;
+      }
 
       const id = `import-${Date.now()}-${file.name}`;
-      songs = [
-        ...songs,
-        {
-          id,
-          title: file.name.replace(/\.[^.]+$/, ""),
-          artist: "Imported",
-          duration: "--:--",
-          isImported: true
-        }
-      ];
-      console.log("Imported:", file);
+      const newSong: Song = {
+        id,
+        title: file.name.replace(/\.[^.]+$/, ""),
+        artist: "Imported",
+        duration: "--:--",
+        isImported: true
+      };
+
+      songs = [...songs, newSong];
+      console.log("Imported song file:", file);
     });
 
+    // Reset input so re-uploading same file works
     input.value = "";
   }
 </script>
@@ -126,17 +132,25 @@
   {#if phase === "splash"}
     <!-- SPLASH / TAP TO START -->
     <section class="screen screen-center">
-      <div class="logo-lockup" on:click={handleSplashTap}>
-        <div class="logo-pill">
-          <span class="logo-dot" />
-          <span class="logo-text-main">Project Baguette</span>
+      <div class="splash-card" on:click={handleSplashTap}>
+        <div class="logo-lockup">
+          <div class="logo-pill">
+            <span class="logo-dot" />
+            <span class="logo-text-main">Project Baguette</span>
+          </div>
+          <p class="logo-sub">soft neon rhythm sandbox</p>
         </div>
-        <p class="logo-sub">rhythm / mv / vibes</p>
+
         <button class="tap-button">
           <span>Tap to Start</span>
         </button>
+
+        <p class="splash-meta">early prototype · auto-chart · MV-ready</p>
       </div>
-      <p class="hint">(WASD · Mouse · Touch · Controller later)</p>
+
+      <p class="hint">
+        WASD · mouse · touch · controller later
+      </p>
     </section>
 
   {:else if phase === "player-select"}
@@ -162,11 +176,12 @@
           </button>
         {/each}
 
+        <!-- Add profile -->
         <button class="card profile-card add-card" on:click={openAddProfile}>
           <div class="avatar avatar-add">+</div>
           <div class="profile-info">
             <div class="profile-name">Add player</div>
-            <div class="profile-meta">Sign in with Google</div>
+            <div class="profile-meta">Sign in with Google (soon)</div>
           </div>
         </button>
       </div>
@@ -176,7 +191,8 @@
           <div class="modal" on:click|stopPropagation>
             <h2>Connect an account</h2>
             <p class="modal-text">
-              For now this is a mock. Later this button will use real Google Sign-In.
+              This is just a mock for now. Later this button will use real Google Sign-In
+              and sync your scores.
             </p>
             <button class="google-btn" on:click={fakeGoogleSignIn}>
               <span class="g-logo">G</span>
@@ -193,13 +209,17 @@
     <section class="screen">
       <header class="top-bar">
         <div class="top-left">
-          <h1 class="title">Hi, {selectedProfile?.name ?? "Player"}.</h1>
-          <p class="subtitle">What do you want to do?</p>
+          <h1 class="title">
+            Hi, {selectedProfile?.name ?? "Player"}.
+          </h1>
+          <p class="subtitle">
+            What kind of chaos are we making today?
+          </p>
         </div>
         <div class="top-right">
           <div
             class="mini-avatar"
-            style={`background:${selectedProfile?.avatarColor ?? "#ff9fbf"}`}
+            style={`background:${selectedProfile?.avatarColor ?? "#ffd5e5"}`}
           >
             {selectedProfile?.name.charAt(0).toUpperCase() ?? "P"}
           </div>
@@ -209,48 +229,66 @@
       <div class="menu-list">
         <button class="menu-item primary" on:click={goToRhythmGameMenu}>
           <div class="menu-label">
-            <span class="menu-title">Rhythm Game</span>
-            <span class="menu-sub">Tap notes · auto charts · MV background</span>
+            <div class="menu-title-row">
+              <span class="menu-icon">🥖</span>
+              <span class="menu-title">Rhythm Game</span>
+            </div>
+            <span class="menu-sub">Tap notes · auto charts · MV backgrounds</span>
           </div>
           <span class="menu-arrow">›</span>
         </button>
 
         <button class="menu-item">
           <div class="menu-label">
-            <span class="menu-title">My Songs</span>
-            <span class="menu-sub">Manage imports, favorites, and charts</span>
+            <div class="menu-title-row">
+              <span class="menu-icon">🎵</span>
+              <span class="menu-title">My Songs</span>
+            </div>
+            <span class="menu-sub">Imports · metadata · your custom packs</span>
           </div>
           <span class="menu-arrow">›</span>
         </button>
 
         <button class="menu-item">
           <div class="menu-label">
-            <span class="menu-title">Customization</span>
-            <span class="menu-sub">Layouts, skins, pastel chaos</span>
+            <div class="menu-title-row">
+              <span class="menu-icon">🎨</span>
+              <span class="menu-title">Customization</span>
+            </div>
+            <span class="menu-sub">Layouts · skins · pastel chaos settings</span>
           </div>
           <span class="menu-arrow">›</span>
         </button>
 
         <button class="menu-item">
           <div class="menu-label">
-            <span class="menu-title">Idle RPG</span>
-            <span class="menu-sub">Coming soon: tap to grind baguette XP</span>
+            <div class="menu-title-row">
+              <span class="menu-icon">🗡️</span>
+              <span class="menu-title">Idle RPG</span>
+            </div>
+            <span class="menu-sub">Coming soon: baguette quests between songs</span>
           </div>
           <span class="menu-arrow">›</span>
         </button>
 
         <button class="menu-item">
           <div class="menu-label">
-            <span class="menu-title">Gallery</span>
-            <span class="menu-sub">Replays, screenshots, MV shots</span>
+            <div class="menu-title-row">
+              <span class="menu-icon">🖼️</span>
+              <span class="menu-title">Gallery</span>
+            </div>
+            <span class="menu-sub">Replays · screenshots · MV snapshots</span>
           </div>
           <span class="menu-arrow">›</span>
         </button>
 
         <button class="menu-item">
           <div class="menu-label">
-            <span class="menu-title">Settings</span>
-            <span class="menu-sub">Controls · latency · account</span>
+            <div class="menu-title-row">
+              <span class="menu-icon">⚙️</span>
+              <span class="menu-title">Settings</span>
+            </div>
+            <span class="menu-sub">Controls · latency · account & storage</span>
           </div>
           <span class="menu-arrow">›</span>
         </button>
@@ -264,7 +302,7 @@
         <div class="top-left">
           <button class="ghost-btn small" on:click={backToMainMenu}>‹ Back</button>
           <h1 class="title">Rhythm Game</h1>
-          <p class="subtitle">Pick a song or import your own.</p>
+          <p class="subtitle">Pick a song or import your own track.</p>
         </div>
       </header>
 
@@ -272,8 +310,7 @@
         <div class="song-list">
           {#each songs as song}
             <button
-              class="song-row"
-              class:selected={song.id === selectedSongId}
+              class="song-row {song.id === selectedSongId ? 'selected' : ''}"
               on:click={() => handleSongClick(song)}
             >
               <div class="song-main">
@@ -297,7 +334,7 @@
           <h2>Import song</h2>
           <p class="subtitle small">
             Drop in <code>.mp3</code>, <code>.ogg</code>, <code>.wav</code>, or <code>.flac</code>.
-            The game will auto-chart from the audio.
+            Project Baguette will auto-chart from the audio.
           </p>
 
           <label class="import-drop">
@@ -322,13 +359,12 @@
 </div>
 
 <style>
-  /* ************ GLOBAL ************ */
-
   :global(body) {
     margin: 0;
     font-family: system-ui, -apple-system, BlinkMacSystemFont, "Comfortaa",
       "SF Pro Text", sans-serif;
-    background: radial-gradient(circle at top, #1b1826 0, #05030b 60%, #020104 100%);
+    background:
+      radial-gradient(circle at 10% 0%, #251925 0, #0a050f 45%, #050309 100%);
     color: #fefbff;
     -webkit-font-smoothing: antialiased;
   }
@@ -341,14 +377,15 @@
 
   .bg-orbit {
     position: fixed;
-    width: 80vmax;
-    height: 80vmax;
+    width: 90vmax;
+    height: 90vmax;
     border-radius: 50%;
-    background: radial-gradient(circle at 30% 20%, #ff9fbf 0, transparent 60%),
-      radial-gradient(circle at 70% 80%, #9fdfff 0, transparent 60%);
+    background:
+      radial-gradient(circle at 30% 25%, rgba(255, 200, 220, 0.95) 0, transparent 60%),
+      radial-gradient(circle at 80% 80%, rgba(190, 220, 255, 0.85) 0, transparent 60%);
     opacity: 0.16;
-    filter: blur(12px);
-    top: -30vmax;
+    filter: blur(16px);
+    top: -35vmax;
     left: -20vmax;
     pointer-events: none;
     z-index: -2;
@@ -356,10 +393,10 @@
 
   .bg-orbit.orbit-2 {
     top: auto;
-    bottom: -40vmax;
+    bottom: -45vmax;
     left: auto;
-    right: -20vmax;
-    transform: rotate(12deg);
+    right: -25vmax;
+    transform: rotate(10deg);
     opacity: 0.12;
   }
 
@@ -367,17 +404,15 @@
     position: fixed;
     inset: 0;
     background-image: linear-gradient(
-        135deg,
-        rgba(255, 255, 255, 0.03),
-        transparent 60%
-      );
+      135deg,
+      rgba(255, 255, 255, 0.03),
+      transparent 65%
+    );
     mix-blend-mode: soft-light;
-    opacity: 0.4;
+    opacity: 0.5;
     pointer-events: none;
     z-index: -1;
   }
-
-  /* ************ SCREENS ************ */
 
   .screen {
     position: relative;
@@ -395,24 +430,30 @@
     text-align: center;
   }
 
-  /* ************ SPLASH ************ */
+  .splash-card {
+    padding: 26px 28px 22px;
+    border-radius: 26px;
+    background:
+      radial-gradient(circle at top left, rgba(255, 255, 255, 0.08), transparent 60%),
+      rgba(13, 7, 20, 0.96);
+    box-shadow: 0 18px 60px rgba(0, 0, 0, 0.7);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    cursor: pointer;
+    max-width: 360px;
+    backdrop-filter: blur(14px);
+  }
 
   .logo-lockup {
-    cursor: pointer;
-    padding: 24px 32px;
-    border-radius: 24px;
-    background: linear-gradient(135deg, #1b141f 0, #0c0711 60%);
-    box-shadow: 0 18px 50px rgba(0, 0, 0, 0.5);
-    border: 1px solid rgba(255, 255, 255, 0.12);
+    margin-bottom: 14px;
   }
 
   .logo-pill {
     display: inline-flex;
     align-items: center;
-    padding: 8px 16px;
+    padding: 8px 14px;
     border-radius: 999px;
-    background: rgba(12, 7, 17, 0.85);
-    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(12, 7, 17, 0.9);
+    border: 1px solid rgba(255, 255, 255, 0.14);
     margin-bottom: 8px;
   }
 
@@ -422,7 +463,7 @@
     border-radius: 50%;
     margin-right: 8px;
     background: #bf2424;
-    box-shadow: 0 0 18px rgba(191, 36, 36, 0.9);
+    box-shadow: 0 0 18px rgba(191, 36, 36, 0.8);
   }
 
   .logo-text-main {
@@ -434,25 +475,25 @@
   }
 
   .logo-sub {
-    margin: 4px 0 16px;
-    color: #bcb2ff;
+    margin: 2px 0 0;
+    color: #d6cdff;
     font-size: 0.9rem;
   }
 
   .tap-button {
-    margin-top: 8px;
-    padding: 12px 24px;
+    margin-top: 16px;
+    padding: 11px 22px;
     border-radius: 999px;
     border: none;
-    background: #bf2424;
+    background: linear-gradient(135deg, #ff7c7c, #bf2424);
     color: #fff;
     font-weight: 600;
     font-size: 0.95rem;
     cursor: pointer;
     position: relative;
     overflow: hidden;
-    box-shadow: 0 12px 30px rgba(191, 36, 36, 0.75);
-    animation: pulse 1.3s ease-in-out infinite;
+    box-shadow: 0 14px 32px rgba(191, 36, 36, 0.6);
+    animation: tapPulse 1.4s ease-in-out infinite;
   }
 
   .tap-button span {
@@ -464,23 +505,28 @@
     content: "";
     position: absolute;
     inset: 0;
-    background: linear-gradient(135deg, #ff7c7c, #bf2424);
+    background: linear-gradient(135deg, #ffe4e4, #ffb4c0);
     opacity: 0;
-    transition: opacity 0.2s;
+    transition: opacity 0.18s ease-out;
   }
 
   .tap-button:hover::before {
     opacity: 0.16;
   }
 
-  .hint {
-    margin-top: 16px;
+  .splash-meta {
+    margin-top: 10px;
+    font-size: 0.8rem;
     color: #c8c1ff;
+    opacity: 0.9;
+  }
+
+  .hint {
+    margin-top: 18px;
+    color: #d6cdff;
     font-size: 0.85rem;
     opacity: 0.8;
   }
-
-  /* ************ PLAYER SELECT ************ */
 
   .top-bar {
     display: flex;
@@ -497,7 +543,7 @@
 
   .subtitle {
     margin: 4px 0 0;
-    color: #c8c1ff;
+    color: #d6cdff;
     font-size: 0.9rem;
   }
 
@@ -506,15 +552,15 @@
   }
 
   .mini-avatar {
-    width: 36px;
-    height: 36px;
+    width: 40px;
+    height: 40px;
     border-radius: 999px;
     display: flex;
     align-items: center;
     justify-content: center;
     font-weight: 700;
-    color: #08040c;
-    box-shadow: 0 0 12px rgba(255, 255, 255, 0.35);
+    color: #160912;
+    box-shadow: 0 0 16px rgba(255, 255, 255, 0.4);
   }
 
   .grid {
@@ -530,25 +576,31 @@
   .card {
     position: relative;
     border-radius: 20px;
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    background: radial-gradient(circle at top left, rgba(255, 255, 255, 0.04), transparent 55%),
-      rgba(8, 4, 14, 0.95);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    background:
+      radial-gradient(circle at top left, rgba(255, 255, 255, 0.05), transparent 60%),
+      rgba(10, 5, 16, 0.97);
     padding: 14px 16px;
     text-align: left;
     display: flex;
     gap: 10px;
     align-items: center;
     cursor: pointer;
-    transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease,
+    transition:
+      transform 0.15s ease,
+      box-shadow 0.15s ease,
+      border-color 0.15s ease,
       background 0.15s ease;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55);
   }
 
   .card:hover {
     transform: translateY(-2px);
-    border-color: rgba(255, 255, 255, 0.2);
-    box-shadow: 0 10px 28px rgba(0, 0, 0, 0.7);
-    background: radial-gradient(circle at top left, rgba(255, 255, 255, 0.08), transparent 55%),
-      rgba(8, 4, 14, 0.98);
+    border-color: rgba(255, 255, 255, 0.22);
+    box-shadow: 0 14px 38px rgba(0, 0, 0, 0.75);
+    background:
+      radial-gradient(circle at top left, rgba(255, 255, 255, 0.08), transparent 60%),
+      rgba(11, 6, 18, 0.98);
   }
 
   .profile-card {
@@ -556,23 +608,23 @@
   }
 
   .avatar {
-    width: 44px;
-    height: 44px;
+    width: 46px;
+    height: 46px;
     border-radius: 50%;
     flex-shrink: 0;
     display: flex;
     align-items: center;
     justify-content: center;
     font-weight: 700;
-    color: #08040c;
-    box-shadow: 0 0 16px rgba(255, 255, 255, 0.4);
+    color: #160912;
+    box-shadow: 0 0 16px rgba(255, 255, 255, 0.5);
   }
 
   .avatar-add {
     background: rgba(255, 255, 255, 0.08);
     color: #ffe4ec;
     box-shadow: none;
-    border: 1px dashed rgba(255, 255, 255, 0.3);
+    border: 1px dashed rgba(255, 255, 255, 0.4);
   }
 
   .profile-info {
@@ -592,10 +644,8 @@
 
   .add-card {
     border-style: dashed;
-    border-color: rgba(255, 255, 255, 0.22);
+    border-color: rgba(255, 255, 255, 0.26);
   }
-
-  /* ************ MODAL ************ */
 
   .modal-backdrop {
     position: fixed;
@@ -610,10 +660,10 @@
   .modal {
     width: min(360px, 90vw);
     padding: 20px 22px 18px;
-    border-radius: 18px;
-    background: rgba(8, 4, 14, 0.98);
-    border: 1px solid rgba(255, 255, 255, 0.16);
-    box-shadow: 0 18px 40px rgba(0, 0, 0, 0.7);
+    border-radius: 20px;
+    background: rgba(8, 4, 14, 0.99);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    box-shadow: 0 18px 40px rgba(0, 0, 0, 0.75);
   }
 
   .modal h2 {
@@ -643,6 +693,7 @@
     cursor: pointer;
     margin-bottom: 8px;
   }
+
   .g-logo {
     width: 20px;
     height: 20px;
@@ -654,6 +705,11 @@
       #fbbc05 180deg 270deg,
       #ea4335 270deg 360deg
     );
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.7rem;
+    color: #fff;
   }
 
   .ghost-btn {
@@ -672,10 +728,8 @@
     margin-bottom: 8px;
   }
 
-  /* ************ MENUS ************ */
-
   .menu-list {
-    margin-top: 8px;
+    margin-top: 10px;
     display: flex;
     flex-direction: column;
     gap: 14px;
@@ -686,31 +740,33 @@
     border: none;
     cursor: pointer;
     padding: 14px 18px;
-    border-radius: 18px;
-    background: linear-gradient(135deg, rgba(13, 7, 19, 0.96), rgba(6, 2, 12, 0.98));
+    border-radius: 22px;
+    background:
+      radial-gradient(circle at top left, rgba(255, 255, 255, 0.04), transparent 60%),
+      rgba(13, 7, 19, 0.96);
     color: #fefbff;
     display: flex;
     align-items: center;
     justify-content: space-between;
     overflow: hidden;
-    transform: skewX(-12deg);
-    border: 1px solid rgba(255, 255, 255, 0.12);
+    border: 1px solid rgba(255, 255, 255, 0.16);
     box-shadow: 0 14px 32px rgba(0, 0, 0, 0.7);
-    transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease,
+    transition:
+      transform 0.15s ease,
+      box-shadow 0.15s ease,
+      border-color 0.15s ease,
       background 0.15s ease;
   }
 
-  .menu-item > * {
-    transform: skewX(12deg);
-  }
-
   .menu-item.primary {
-    background: linear-gradient(135deg, rgba(191, 36, 36, 0.95), rgba(133, 32, 79, 0.95));
-    border-color: rgba(255, 220, 230, 0.5);
+    background:
+      radial-gradient(circle at top left, rgba(255, 228, 228, 0.12), transparent 60%),
+      linear-gradient(135deg, rgba(191, 36, 36, 0.85), rgba(133, 32, 79, 0.9));
+    border-color: rgba(255, 220, 230, 0.6);
   }
 
   .menu-item:hover {
-    transform: translateY(-2px) skewX(-12deg);
+    transform: translateY(-2px);
     box-shadow: 0 18px 40px rgba(0, 0, 0, 0.85);
     border-color: rgba(255, 255, 255, 0.22);
   }
@@ -719,6 +775,17 @@
     display: flex;
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .menu-title-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 2px;
+  }
+
+  .menu-icon {
+    font-size: 1.2rem;
   }
 
   .menu-title {
@@ -733,14 +800,12 @@
   }
 
   .menu-arrow {
-    font-size: 1.3rem;
-    opacity: 0.8;
+    font-size: 1.2rem;
+    opacity: 0.9;
   }
 
-  /* ************ SONG SELECT ************ */
-
   .song-layout {
-    margin-top: 8px;
+    margin-top: 10px;
     display: grid;
     grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
     gap: 18px;
@@ -755,23 +820,31 @@
   .song-row {
     border-radius: 16px;
     border: 1px solid rgba(255, 255, 255, 0.12);
-    background: rgba(8, 4, 14, 0.96);
+    background: rgba(10, 5, 16, 0.96);
     padding: 10px 14px;
     display: flex;
     align-items: center;
     justify-content: space-between;
     cursor: pointer;
-    transition: border-color 0.15s, background 0.15s, transform 0.1s;
+    transition:
+      border-color 0.15s,
+      background 0.15s,
+      transform 0.1s,
+      box-shadow 0.15s;
+    box-shadow: 0 10px 26px rgba(0, 0, 0, 0.55);
   }
 
   .song-row:hover {
     border-color: rgba(255, 255, 255, 0.22);
     transform: translateY(-1px);
+    box-shadow: 0 14px 32px rgba(0, 0, 0, 0.7);
   }
 
   .song-row.selected {
     border-color: #bf2424;
-    box-shadow: 0 0 0 1px rgba(191, 36, 36, 0.4);
+    box-shadow: 0 0 0 1px rgba(191, 36, 36, 0.4), 0 16px 40px rgba(0, 0, 0, 0.8);
+    background: radial-gradient(circle at top left, rgba(191, 36, 36, 0.2), transparent 60%),
+      rgba(12, 5, 18, 0.98);
   }
 
   .song-main {
@@ -818,9 +891,11 @@
   .song-import {
     border-radius: 18px;
     padding: 14px 16px;
-    background: radial-gradient(circle at top, rgba(255, 255, 255, 0.04), transparent 60%),
+    background:
+      radial-gradient(circle at top, rgba(255, 255, 255, 0.05), transparent 65%),
       rgba(6, 2, 12, 0.98);
-    border: 1px solid rgba(255, 255, 255, 0.15);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    box-shadow: 0 14px 32px rgba(0, 0, 0, 0.7);
   }
 
   .song-import h2 {
@@ -873,21 +948,18 @@
     color: #c8c1ff;
   }
 
-
-  /* ************ ANIM ************ */
-
-  @keyframes pulse {
+  @keyframes tapPulse {
     0% {
       transform: translateY(0) scale(1);
-      box-shadow: 0 12px 30px rgba(191, 36, 36, 0.75);
+      box-shadow: 0 14px 32px rgba(191, 36, 36, 0.6);
     }
     50% {
       transform: translateY(-1px) scale(1.03);
-      box-shadow: 0 18px 40px rgba(191, 36, 36, 0.9);
+      box-shadow: 0 18px 44px rgba(191, 36, 36, 0.85);
     }
     100% {
       transform: translateY(0) scale(1);
-      box-shadow: 0 12px 30px rgba(191, 36, 36, 0.75);
+      box-shadow: 0 14px 32px rgba(191, 36, 36, 0.6);
     }
   }
 

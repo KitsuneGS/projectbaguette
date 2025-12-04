@@ -1,69 +1,45 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-<meta charset="UTF-8" />
-<meta name="viewport"
-      content="width=device-width, initial-scale=1.0, user-scalable=no" />
-<title>Project Baguette</title>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-<style>
-  html, body {
-    margin: 0;
-    padding: 0;
-    background: black;
-    overflow: hidden;
-    touch-action: manipulation;
-    font-family: Arial, sans-serif;
-  }
+    <title>Project Baguette</title>
 
-  /* MV background (hidden until JS fades it in) */
-  #mv {
-    position: fixed;
-    top: 0; left: 0;
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    pointer-events: none;
+    <!-- Comfortaa + fallback -->
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Comfortaa:wght@400;600;700&display=swap">
 
-    display: none;      /* prevents first-frame white flash on iOS */
-    opacity: 0;
-    transition: opacity 1s ease;
-    z-index: 0;
-  }
+    <!-- Favicon (optional) -->
+    <link rel="icon" href="assets/favicon.png" />
 
-  /* Canvas on top */
-  #game {
-    position: fixed;
-    top: 0; left: 0;
-    z-index: 1;
-  }
-</style>
+    <!-- For GitHub Pages SPA routing -->
+    <script>
+      // Fix GH Pages path issues with SvelteKit routes
+      (function () {
+        const redirect = sessionStorage.redirect;
+        delete sessionStorage.redirect;
+        if (redirect && redirect !== location.href) {
+          history.replaceState(null, null, redirect);
+        }
+      })();
+    </script>
 
-</head>
+    <style>
+      html, body {
+        margin: 0;
+        height: 100%;
+        overscroll-behavior: none;
+        background: black;
+      }
+      #app {
+        height: 100%;
+      }
+    </style>
+  </head>
 
-<body>
+  <body>
+    <div id="app"></div>
 
-  <!-- Background MV -->
- <video id="mv"
-       src="assets/defaults/mv-default.mp4"
-       muted
-       playsinline
-       preload="auto"
-       webkit-playsinline
-       x-webkit-airplay="allow"
-       disablepictureinpicture>
-</video>
-
-  <!-- Song (MP3 is recommended for iOS) -->
-  <audio id="song"
-         src="assets/defaults/song-demo.mp3"
-         preload="none"></audio>
-
-  <!-- Game canvas -->
-  <canvas id="game"></canvas>
-
-  <!-- Rhythm Engine v8-P-Fixed -->
-  <script src="main.js"></script>
-
-</body>
+    <!-- The built SvelteKit JS will inject here on export -->
+  </body>
 </html>

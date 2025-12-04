@@ -26,13 +26,19 @@ jobs:
           cd svelte/svelte-ui
           npm install
 
-      - name: 🏗️ Build Svelte UI
+        - name: 🏗️ Build Svelte UI
         run: |
           cd svelte/svelte-ui
           npm run build
+
+          # Clean old docs
           rm -rf ../../docs
-          mkdir ../../docs
-          cp -r build/* ../../docs
+
+          # Create proper subfolder matching GitHub Pages path
+          mkdir -p ../../docs/projectbaguette
+
+          # Copy build
+          cp -r build/* ../../docs/projectbaguette
 
       - name: 🚀 Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v4

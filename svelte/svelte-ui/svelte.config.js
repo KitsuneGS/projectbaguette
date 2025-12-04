@@ -1,31 +1,26 @@
 import adapter from '@sveltejs/adapter-static';
 import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
 
-const dev = process.argv.includes('dev');
-
 /** @type {import('@sveltejs/kit').Config} */
 const config = {
-  preprocess: vitePreprocess(),
+	preprocess: vitePreprocess(),
 
-  kit: {
-    // GitHub Pages needs a static build + a fallback index.html for routing
-    adapter: adapter({
-      pages: 'build',
-      assets: 'build',
-      fallback: 'index.html'
-    }),
+	kit: {
+		adapter: adapter({
+			// GitHub Pages base path (project name)
+			pages: 'build',
+			assets: 'build'
+		}),
 
-    // Base path for GitHub Pages publishing
-    paths: {
-      base: dev ? '' : '/projectbaguette'
-    },
+		paths: {
+			// !!! IMPORTANT for GitHub Pages (repo name)
+			base: process.env.NODE_ENV === 'production' ? '/projectbaguette' : ''
+		},
 
-    // Prevent SvelteKit from changing the build dir name
-    appDir: 'app',
-
-    // Pretty URLs fine on GH Pages
-    trailingSlash: 'ignore'
-  }
+		prerender: {
+			entries: ['*']
+		}
+	}
 };
 
 export default config;

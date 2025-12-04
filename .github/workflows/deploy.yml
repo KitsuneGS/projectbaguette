@@ -1,38 +1,30 @@
-name: Deploy to GitHub Pages
-
+name: Deploy to GH Pages
 on:
   push:
-    branches: [ main ]
-  workflow_dispatch:
-
+    branches: [ main ] # Or your default branch
 permissions:
   contents: read
   pages: write
   id-token: write
-
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: '20' # Or your Node version
           cache: 'npm'
-
       - name: Install dependencies
         run: npm ci
-
       - name: Build
         run: npm run build
-
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: build   # This assumes adapter-static outputs to 'build' (default)
+          path: ./build # Or ./dist if that's your output
 
   deploy:
     environment:

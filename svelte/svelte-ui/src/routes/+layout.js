@@ -1,3 +1,4 @@
-// +layout.js
+// svelte/svelte-ui/src/routes/+layout.js
 export const prerender = true;
 export const ssr = false;
+export const trailingSlash = 'never';

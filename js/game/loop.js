@@ -4,11 +4,7 @@
 // Behavior preserved from v8-P engine
 //
 
-import { getSongTime } from "./time.js";
-import { generateNotes, notes, cleanupNotes, APPROACH_TIME } from "./notes.js";
-import { drawFrame } from "./render.js";
-import { registerMiss, HIT_WINDOW_GOOD, MISS_EXTRA } from "./judge.js";
-import { particles, cleanupParticles } from "./particles.js";
+
 
 // exported so start.js can trigger
 export function startLoop() {

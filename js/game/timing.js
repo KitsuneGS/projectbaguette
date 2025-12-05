@@ -1,21 +1,21 @@
-// js/game/timing.js
-// Stores shared BPM/BEAT + clock
+export let BPM = 120;
+export let BEAT = 60 / BPM;
+export const beatTimes = [];
+let autoChartReady = false;
 
-let BPM = 120;
-let BEAT = 60 / 120;
-
-export function setBPM(bpm) {
-  if (!bpm || bpm < 40 || bpm > 300) return; // sanity guard
-  BPM = bpm;
-  BEAT = 60 / bpm;
-  console.log(`🎼 BPM Set → ${bpm}`);
+export function getSongTime() {
+  return document.getElementById("song").currentTime || 0;
 }
 
-export function getBPM() { return BPM; }
-export function getBEAT() { return BEAT; }
+export function setAutoChartReady(v) {
+  autoChartReady = v;
+}
 
-// Shared time source
-export function getSongTime() {
-  const audio = document.getElementById("song");
-  return audio && !isNaN(audio.currentTime) ? audio.currentTime : 0;
+export function isAutoChartReady() {
+  return autoChartReady;
+}
+
+export function setBPM(v) {
+  BPM = v;
+  BEAT = 60 / BPM;
 }

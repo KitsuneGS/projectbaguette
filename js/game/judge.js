@@ -33,7 +33,11 @@ export function registerHit(n, label, baseScore) {
 
   lastHitText = label;
   lastHitTime = getSongTime();
-
+  import { setHitDisplay } from "./render.js";
+setHitDisplay(n.targetX, n.targetY, LANES[n.lane].color);
+  
+setHitDisplay(n.targetX, n.targetY, "#ccc");
+  
   addParticles(n.targetX, n.targetY, LANES[n.lane].color);
 }
 

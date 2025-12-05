@@ -1,64 +1,56 @@
-// js/game/start.js
-//
-// Handles: Splash screen → unlock audio → auto-chart → start MV + loop
-//
-
-import { audio, mv, audioCtx, prepareAutoChart } from "./audio.js";
+import { prepareAutoChart } from "./audio.js";
 import { startLoop } from "./loop.js";
 
-// Create tap overlay exactly once
-const overlay = document.createElement("div");
-overlay.style.cssText = `
-  position:fixed; inset:0;
-  background:black; color:white;
-  display:flex; flex-direction:column;
-  align-items:center; justify-content:center;
-  font-family:Arial Black, sans-serif;
-  z-index:99999; font-size:32px;
-`;
-overlay.innerHTML = `
-  <div style="opacity:0.9">PROJECT BAGUETTE</div>
-  <div id="tapToStart" style="margin-top:20px;font-size:20px;opacity:0.7;">Tap to Start</div>
-`;
-document.body.appendChild(overlay);
+const overlay = document.getElementById("startOverlay");
+const tapText = document.getElementById("tapText");
+const audio = document.getElementById("song");
+const mv = document.getElementById("mv");
 
-// blinking text
+// Blink stays animated via CSS or we can animate here
+let blink = true;
 setInterval(() => {
-  const el = document.getElementById("tapToStart");
-  if (el) el.style.opacity = (el.style.opacity === "0.4" ? "0.9" : "0.4");
+  blink = !blink;
+  if (tapText) tapText.style.opacity = blink ? "0.9" : "0.4";
 }, 600);
 
-// --------------------- CLICK / TAP ---------------------
 overlay.addEventListener("click", async () => {
+  // fade out overlay
   overlay.style.transition = "opacity 0.4s ease";
   overlay.style.opacity = "0";
-
   setTimeout(() => overlay.remove(), 450);
 
-  // unlock audio
-  try {
-    const AC = window.AudioContext || window.webkitAudioContext;
-    if (audioCtx && audioCtx.state === "suspended") await audioCtx.resume();
-    else if (!audioCtx) new AC();
-  } catch (_) {}
+  // unlock audio context
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!window.audioCtx) window.audioCtx = new AC();
+  if (window.audioCtx.state === "suspended") {
+    await window.audioCtx.resume().catch(() => {});
+  }
 
-  // auto-chart BEFORE audio playback
+  // build chart BEFORE audio plays
   try {
     await prepareAutoChart();
-  } catch (err) {
-    console.warn("Auto chart error:", err);
+  } catch {
+    console.warn("Failed to autogen chart - fallback will trigger.");
   }
 
   // start audio
-  try { await audio.play(); }
-  catch { alert("Tap again — Safari blocked audio."); return; }
+  try {
+    await audio.play();
+  } catch (err) {
+    alert("Tap again — browser blocked playback.");
+    return;
+  }
 
-  // MV start
-  mv.style.display = "block";
-  mv.style.opacity = "0";
-  requestAnimationFrame(() => (mv.style.opacity = "1"));
-  mv.play().catch(err => console.warn("MV blocked:", err));
+  // MV video fade-in logic
+  const showMV = () => {
+    mv.style.display = "block";
+    requestAnimationFrame(() => (mv.style.opacity = "1"));
+    mv.play().catch(() => {});
+  };
 
-  // Begin game loop
+  if (mv.readyState >= 2) showMV();
+  else mv.addEventListener("loadeddata", showMV, { once: true });
+
+  // start the game
   startLoop();
 });

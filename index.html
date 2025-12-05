@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Project Baguette</title>
+
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: black;
+      overflow: hidden;
+      touch-action: manipulation;
+      font-family: Arial, sans-serif;
+    }
+
+    /* Canvas behind everything by default */
+    #game {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100vw; height: 100vh;
+      background: black;
+    }
+
+    /* MV Video background */
+    #mv {
+      position: fixed;
+      top: 0; left: 0;
+      width: 100vw; height: 100vh;
+      object-fit: cover;
+      z-index: 1;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 1s ease;
+    }
+
+    /* Hide native audio UI */
+    #song {
+      display: none;
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- Background MV -->
+  <video id="mv" src="assets/defaults/mv-default.mp4" muted playsinline></video>
+
+  <!-- Game Canvas -->
+  <canvas id="game"></canvas>
+
+  <!-- Song Audio -->
+  <audio id="song" preload="auto"
+         src="assets/defaults/song-demo.mp3"
+         type="audio/mpeg"></audio>
+
+  <!-- Your Game Script -->
+  <script src="js/main.js"></script>
+
+</body>
+</html>

@@ -1,85 +1,126 @@
-// js/game/render.js
-import { ctx, width, height, BASE_R_SCALE, DEBUG } from "./core.js";
-import {
-  LANES,
-  notes,
-  particles,
-  score,
-  combo,
-  lastHitText,
-  lastHitTime,
-  BEAT,
-  HIT_FADE_TIME,
-  MISS_FADE_TIME,
-  MISS_SHAKE_FREQ,
-  MISS_SHAKE_AMT,
-  MISS_FALL_SPEED
-} from "./notes.js";
+/* Project Baguette — render.js (full, patched)
+   Provides:
+   • Ghost rings
+   • Trails + notes
+   • Hit & miss effects
+   • Particle rendering
+   • Floating lane labels on notes
+   • Floating hit text above circles (COOL/FINE/MISS)
+*/
 
+////////////////////////////////////////////////////////////
+// IMPORTS (game shared vars)
+////////////////////////////////////////////////////////////
+import { LANES } from "./lanes.js";
+import { notes, particles } from "./notes.js";
+import { getSongTime } from "./audio.js";
+import { score, combo, lastHitText, lastHitTime } from "./judge.js";
+import { smoothedApproach } from "./timing.js";
+
+export let width = window.innerWidth;
+export let height = window.innerHeight;
+export const canvas = document.getElementById("game");
+export const ctx = canvas.getContext("2d");
+
+canvas.width = width;
+canvas.height = height;
+window.addEventListener("resize", () => {
+  width = window.innerWidth;
+  height = window.innerHeight;
+  canvas.width = width;
+  canvas.height = height;
+});
+
+const isMobile = /iPhone|iPad|Android/i.test(navigator.userAgent);
+export const BASE_R_SCALE = isMobile ? 0.10 : 0.045;
+
+
+////////////////////////////////////////////////////////////
+// ANIMATION METRICS
+////////////////////////////////////////////////////////////
+let fps = 0;
+let lastFrame = performance.now();
 let beatPulse = 1;
 
-export function draw(t, fps) {
-  ctx.clearRect(0,0,width,height);
 
-  // global background dark pulse
-  const bp = (t % BEAT) / BEAT;
-  beatPulse = 0.5 + 0.5 * Math.sin(bp * Math.PI * 2);
+// === NEW: floating hit text location/color ===
+let lastHitX = 0;
+let lastHitY = 0;
+let lastHitColor = "#fff";
 
+export function setHitDisplay(x, y, color) {
+  lastHitX = x;
+  lastHitY = y;
+  lastHitColor = color;
+}
+
+
+////////////////////////////////////////////////////////////
+// RENDER MAIN LOOP
+////////////////////////////////////////////////////////////
+export function draw(t, beat, DEBUG = false) {
+  ctx.clearRect(0, 0, width, height);
+
+  // background pulse haze
   ctx.fillStyle = "rgba(0,0,0,0.22)";
   ctx.fillRect(0,0,width,height);
 
   const r = Math.min(width, height) * BASE_R_SCALE;
 
-  ////////////////////////////////////////////////////
-  // TARGET GHOST RINGS
-  ////////////////////////////////////////////////////
+  ////////////////////////////////////////////////////////////
+  // 1) GHOST TARGETS
+  ////////////////////////////////////////////////////////////
   for (const n of notes) {
     ctx.save();
-    ctx.globalAlpha = 0.18 + beatPulse * 0.22;
+
+    ctx.globalAlpha = 0.18 + beat * 0.22;
     ctx.strokeStyle = LANES[n.lane].color;
     ctx.lineWidth = 3;
     ctx.beginPath();
     ctx.arc(n.targetX, n.targetY, r * 0.9, 0, Math.PI * 2);
     ctx.stroke();
 
-    ctx.globalAlpha = 0.05 + 0.10 * beatPulse;
+    ctx.globalAlpha = 0.05 + 0.10 * beat;
     ctx.lineWidth = 1.5;
     ctx.beginPath();
-    ctx.arc(n.targetX, n.targetY, r * (0.7 + 0.3 * beatPulse), 0, Math.PI * 2);
+    ctx.arc(n.targetX, n.targetY, r * (0.7 + 0.3 * beat), 0, Math.PI * 2);
     ctx.stroke();
+
     ctx.restore();
   }
 
-  ////////////////////////////////////////////////////
-  // NOTES
-  ////////////////////////////////////////////////////
+  ////////////////////////////////////////////////////////////
+  // 2) NOTES & HIT/MISS EFFECTS
+  ////////////////////////////////////////////////////////////
   for (const n of notes) {
-    const dt = n.progTime ?? (n.time - t);
-    const prog = n.prog ?? (1 - dt / n.approach ?? 1);
+    const dt = n.time - t;
+    const prog = 1 - dt / smoothedApproach;
 
     if (!n.judged) {
       if (prog < 0 || prog > 1.5) continue;
 
-      const x = n.spawnX + (n.targetX - n.spawnX) * prog;
-      const y = n.spawnY + (n.targetY - n.spawnY) * prog;
+      const x = lerp(n.spawnX, n.targetX, prog);
+      const y = lerp(n.spawnY, n.targetY, prog);
 
-      // trailing streak
+      // Trail
+      const dx = n.targetX - n.spawnX;
+      const dy = n.targetY - n.spawnY;
+      const len = Math.hypot(dx, dy) || 1;
+      const nx = dx / len;
+      const ny = dy / len;
+
       ctx.save();
-      ctx.globalAlpha = 0.25 + 0.15 * beatPulse;
+      ctx.globalAlpha = 0.25 + 0.15 * beat;
       ctx.strokeStyle = LANES[n.lane].color;
       ctx.lineWidth = 10;
       ctx.lineCap = "round";
       ctx.beginPath();
-      ctx.moveTo(x, y);
-      const back = 130;
-      ctx.lineTo(
-        x - (n.targetX - n.spawnX) / (Math.hypot(n.targetX - n.spawnX, n.targetY - n.spawnY)) * back,
-        y - (n.targetY - n.spawnY) / (Math.hypot(n.targetX - n.spawnX, n.targetY - n.spawnY)) * back
-      );
+      ctx.moveTo(x - nx * 130, y - ny * 130);
+      ctx.lineTo(x, y);
       ctx.stroke();
       ctx.restore();
 
-      // note circle
+      // Body + key label
       ctx.save();
       ctx.fillStyle = "rgba(255,255,255,0.9)";
       ctx.strokeStyle = LANES[n.lane].color;
@@ -97,14 +138,12 @@ export function draw(t, fps) {
       ctx.restore();
     }
 
-    ////////////////////////////////////////////////////
-    // HIT FX
-    ////////////////////////////////////////////////////
     else {
       const age = t - n.effectTime;
-      if (n.effect === "hit" && age <= HIT_FADE_TIME) {
+
+      if (n.effect === "hit" && age <= 0.4) {
         ctx.save();
-        const p = age / HIT_FADE_TIME;
+        const p = age / 0.4;
         ctx.globalAlpha = 1 - p;
         ctx.fillStyle = LANES[n.lane].color;
         ctx.beginPath();
@@ -113,46 +152,41 @@ export function draw(t, fps) {
         ctx.restore();
       }
 
-      ////////////////////////////////////////////////////
-      // MISS FX
-      ////////////////////////////////////////////////////
-      else if (n.effect === "miss" && age <= MISS_FADE_TIME) {
-        const shake = Math.sin(age * MISS_SHAKE_FREQ * Math.PI * 2 + n.shakeSeed) * MISS_SHAKE_AMT;
-
-        ctx.globalAlpha = 1 - age / MISS_FADE_TIME;
+      else if (n.effect === "miss" && age <= 0.6) {
+        const shake = Math.sin(age * 14 * Math.PI * 2 + n.shakeSeed) * 10;
+        ctx.globalAlpha = 1 - age / 0.6;
         ctx.save();
         ctx.fillStyle = "rgba(255,255,255,0.9)";
         ctx.strokeStyle = LANES[n.lane].color;
         ctx.lineWidth = 6;
         ctx.beginPath();
-        ctx.arc(n.targetX + shake, n.targetY + age * MISS_FALL_SPEED, r, 0, Math.PI * 2);
+        ctx.arc(n.targetX + shake, n.targetY + age * 220, r, 0, Math.PI * 2);
         ctx.fill();
         ctx.stroke();
         ctx.restore();
-
         ctx.globalAlpha = 1;
       }
     }
   }
 
-  ////////////////////////////////////////////////////
-  // PARTICLES
-  ////////////////////////////////////////////////////
+  ////////////////////////////////////////////////////////////
+  // 3) PARTICLES
+  ////////////////////////////////////////////////////////////
   for (let p of particles) {
     p.life -= 1/60;
     p.x += p.vx / 60;
     p.y += p.vy / 60;
 
-    ctx.globalAlpha = Math.max(0, p.life / 0.4) * (0.5 + 0.5 * beatPulse);
+    ctx.globalAlpha = Math.max(0, p.life / 0.4) * (0.5 + 0.5 * beat);
     ctx.fillStyle = p.color;
     ctx.fillRect(p.x, p.y, 4, 4);
   }
-
+  particles = particles.filter(p => p.life > 0);
   ctx.globalAlpha = 1;
 
-  ////////////////////////////////////////////////////
-  // HUD
-  ////////////////////////////////////////////////////
+  ////////////////////////////////////////////////////////////
+  // 4) HUD NUMBERS
+  ////////////////////////////////////////////////////////////
   ctx.fillStyle = "#fff";
   ctx.font = "18px Arial";
   ctx.textAlign = "left";
@@ -160,15 +194,29 @@ export function draw(t, fps) {
   ctx.fillText("Score: " + score, 20, 55);
   ctx.fillText("Combo: " + combo, 20, 80);
 
-  if (t - lastHitTime < 0.5 && lastHitText) {
-    ctx.font = "32px Arial Black";
+  ////////////////////////////////////////////////////////////
+  // 5) FLOATING HIT TEXT ABOVE CIRCLE (NEW)
+  ////////////////////////////////////////////////////////////
+  if (t - lastHitTime < 0.55 && lastHitText && lastHitX !== undefined) {
+    const age = t - lastHitTime;
+    const p = age / 0.55;
+    const yOffset = -40 * p;
+
+    ctx.save();
+    ctx.globalAlpha = 1 - p;
+
+    ctx.fillStyle = lastHitColor || "#fff";
+    ctx.font = `bold ${Math.min(width,height) * 0.045}px Arial Black`;
     ctx.textAlign = "center";
-    ctx.fillText(lastHitText, width/2, height * 0.2);
+    ctx.textBaseline = "middle";
+    ctx.fillText(lastHitText, lastHitX, lastHitY + yOffset);
+
+    ctx.restore();
   }
 
-  ////////////////////////////////////////////////////
-  // DEBUG HUD
-  ////////////////////////////////////////////////////
+  ////////////////////////////////////////////////////////////
+  // 6) DEBUG
+  ////////////////////////////////////////////////////////////
   if (DEBUG) {
     ctx.fillStyle = "rgba(0,0,0,0.6)";
     ctx.fillRect(width - 200, 10, 180, 100);
@@ -178,5 +226,22 @@ export function draw(t, fps) {
     ctx.textAlign = "left";
     ctx.fillText(`FPS: ${fps.toFixed(1)}`, width - 190, 30);
     ctx.fillText(`Time: ${t.toFixed(3)}s`, width - 190, 50);
+    ctx.fillText(`Notes: ${notes.length}`, width - 190, 70);
   }
+}
+
+
+////////////////////////////////////////////////////////////
+// LERP (shared)
+////////////////////////////////////////////////////////////
+function lerp(a, b, t) { return a + (b - a) * t; }
+
+
+////////////////////////////////////////////////////////////
+// FPS LOOP HELPER
+////////////////////////////////////////////////////////////
+export function trackFPS() {
+  const now = performance.now();
+  fps = 1000 / (now - lastFrame);
+  lastFrame = now;
 }

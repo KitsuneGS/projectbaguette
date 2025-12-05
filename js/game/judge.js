@@ -1,10 +1,7 @@
 // js/game/judge.js
 // Hit/Miss rules + score/combo state
 
-import { getSongTime } from "./time.js";
-import { LANES } from "./lanes.js";
-import { addParticles } from "./particles.js";
-import { setHitDisplay } from "./render.js";
+
 
 export let score = 0;
 export let combo = 0;

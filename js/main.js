@@ -7,3 +7,4 @@ import "./game/input.js";
 import "./game/render.js";
 import "./game/loop.js";
 import "./game/start.js";
+import "./game/timing.js";

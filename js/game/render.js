@@ -11,11 +11,7 @@
 ////////////////////////////////////////////////////////////
 // IMPORTS (game shared vars)
 ////////////////////////////////////////////////////////////
-import { LANES } from "./lanes.js";
-import { notes, particles } from "./notes.js";
-import { getSongTime } from "./audio.js";
-import { score, combo, lastHitText, lastHitTime } from "./judge.js";
-import { smoothedApproach } from "./timing.js";
+
 
 export let width = window.innerWidth;
 export let height = window.innerHeight;

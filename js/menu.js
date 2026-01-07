@@ -110,7 +110,15 @@
 
     window.PB_MENU_STATE = { bpm: song.bpm || 120, diffIndex };
 
-    if (window.PBEngine?.setSong) window.PBEngine.setSong(song.audio, song.mv);
+    function assetUrl(relPath) {
+  const clean = String(relPath).replace(/^\/+/, ""); // remove leading /
+  const base = new URL(".", location.href);
+  return new URL(clean, base).toString();
+}
+
+if (window.PBEngine?.setSong) {
+  window.PBEngine.setSong(assetUrl(song.audio), assetUrl(song.mv));
+}
   }
 
   function start() {

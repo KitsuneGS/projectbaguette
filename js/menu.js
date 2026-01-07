@@ -110,7 +110,7 @@
 
     window.PB_MENU_STATE = { bpm: song.bpm || 120, diffIndex };
 
-    if (window.PBEngine?.setSong) window.PBEngine.setSong(song.audio, song.mv);
+    if (window.PBEngine?.setSong) window.const base = new URL(".", location.href); PBEngine.setSong(   new URL(song.audio, base).toString(),   new URL(song.mv, base).toString() );
   }
 
   function start() {

@@ -35,15 +35,27 @@ mv.style.transition = "opacity 1s ease";
 
 let width = window.innerWidth;
 let height = window.innerHeight;
-canvas.width = width;
-canvas.height = height;
+let dpr = window.devicePixelRatio || 1;
 
-window.addEventListener("resize", () => {
+// Make canvas resolution match the screen (prevents "drawing off-screen" / invisible notes)
+function fitCanvasToScreen() {
+  dpr = window.devicePixelRatio || 1;
   width = window.innerWidth;
   height = window.innerHeight;
-  canvas.width = width;
-  canvas.height = height;
-});
+
+  canvas.width = Math.floor(width * dpr);
+  canvas.height = Math.floor(height * dpr);
+
+  // Keep CSS size in CSS pixels
+  canvas.style.width = "100%";
+  canvas.style.height = "100%";
+
+  // Draw using CSS pixels (so all your math can stay in width/height)
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+
+window.addEventListener("resize", fitCanvasToScreen);
+fitCanvasToScreen();
 
 const isMobile = /iPhone|iPad|Android/i.test(navigator.userAgent);
 // 50% bigger circles on mobile (0.067 * 1.5 ≈ 0.10)
@@ -192,10 +204,12 @@ async function prepareAutoChart() {
     }
 
     autoChartReady = true;
+    console.log("AUTOGEN DONE:", beatTimes.length, "beats");
   } catch (e) {
     console.error("Auto-chart decode fail:", e);
     for (let t = 0; t < 120; t += 0.5) beatTimes.push(t);
     autoChartReady = true;
+    console.log("AUTOGEN FALLBACK:", beatTimes.length, "beats");
   }
 }
 
@@ -312,15 +326,15 @@ function handleKey(key) {
 
 canvas.addEventListener("mousedown", e => {
   const r = canvas.getBoundingClientRect();
-  hitAt((e.clientX - r.left) * (canvas.width / r.width),
-        (e.clientY - r.top) * (canvas.height / r.height));
+  hitAt((e.clientX - r.left),
+        (e.clientY - r.top));
 });
 
 canvas.addEventListener("touchstart", e => {
   const r = canvas.getBoundingClientRect();
   const t = e.touches[0];
-  hitAt((t.clientX - r.left) * (canvas.width / r.width),
-        (t.clientY - r.top) * (canvas.height / r.height));
+  hitAt((t.clientX - r.left),
+        (t.clientY - r.top));
   e.preventDefault();
 }, { passive:false });
 
@@ -403,6 +417,21 @@ function draw(t) {
 
   ctx.fillStyle = "rgba(0,0,0,0.22)";
   ctx.fillRect(0,0,width,height);
+
+  // DEBUG BOX (makes it obvious the canvas is visible + notes exist)
+  if (DEBUG) {
+    ctx.save();
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = "rgba(255,0,0,0.85)";
+    ctx.fillRect(16, 16, 240, 90);
+    ctx.fillStyle = "white";
+    ctx.font = "14px ui-monospace, SFMono-Regular, Menlo, monospace";
+    ctx.fillText("canvas OK", 28, 44);
+    ctx.fillText("t=" + t.toFixed(3), 28, 64);
+    ctx.fillText("activeNotes=" + notes.filter(n => !n.judged).length, 28, 84);
+    ctx.restore();
+  }
+
 
   const r = Math.min(width, height) * BASE_R_SCALE;
 
@@ -592,9 +621,14 @@ async function startGame() {
   }
 
   // Build auto-chart BEFORE playing audio
-  try { await prepareAutoChart(); }
-  catch (e) { console.warn("Auto-chart early fail:", e); }
-
+  try {
+    await prepareAutoChart();
+    nextBeatIndex = 0;
+    try { audio.currentTime = 0; } catch(e) {}
+    console.log("START t=", getSongTime());
+  } catch (e) {
+    console.warn("Auto-chart early fail:", e);
+  }
   // Try to start audio
   try { await audio.play(); }
   catch(e) { throw e; }

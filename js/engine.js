@@ -124,6 +124,7 @@ function applyDifficulty() {
 
 const HIT_WINDOW_PERFECT = 0.08;
 const HIT_WINDOW_GOOD = 0.18;
+const HIT_WINDOW_MISS = 0.35
 
 const SPAWN_LOOKAHEAD = 8.0;
 const MISS_EXTRA = 0.20;

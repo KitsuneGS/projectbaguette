@@ -125,9 +125,10 @@ function applyDifficulty() {
 
 const HIT_WINDOW_PERFECT = 0.08;
 const HIT_WINDOW_GOOD = 0.18;
-const HIT_WINDOW_MISS = 0.35
-
+const HIT_WINDOW_MISS = 0.35;
 const SPAWN_LOOKAHEAD = 8.0;
+const MIN_NOTE_GAP = 0.20; // seconds: keep auto-chart from spawning notes too close together
+
 const MISS_EXTRA = 0.20;
 
 const HIT_FADE_TIME = 0.4;
@@ -144,17 +145,28 @@ let mediaSrc = null;
 let beatTimes = [];
 let autoChartReady = false;
 let nextBeatIndex = 0;
-
-
+let lastSpawnedBeatTime = -Infinity; // last note time we spawned (for spacing)
 ////////////////////////////////////////////////////////////
 // INPUT MAPPING
 ////////////////////////////////////////////////////////////
 const LANES = [
-  { key: "w", label: "W", color: "#FFD447", x: 0.50, y: 0.25 },
-  { key: "a", label: "A", color: "#47FFA3", x: 0.25, y: 0.50 },
-  { key: "s", label: "S", color: "#FF69B4", x: 0.50, y: 0.75 },
-  { key: "d", label: "D", color: "#6AB4FF", x: 0.75, y: 0.50 }
+  { key: "w", label: "W", color: "#FFD447", icon: "assets/sprites/triangle.png" },
+  { key: "a", label: "A", color: "#47FFA3", icon: "assets/sprites/square.png" },
+  { key: "s", label: "S", color: "#FF69B4", icon: "assets/sprites/x.png" },
+  { key: "d", label: "D", color: "#6AB4FF", icon: "assets/sprites/circle.png" }
 ];
+
+////////////////////////////////////////////////////////////
+// NOTE ICONS (SPRITES)
+////////////////////////////////////////////////////////////
+// If you add images at these paths, notes will render using them.
+// If an image is missing, the game falls back to drawing a circle + letter.
+const laneIcons = LANES.map((l) => {
+  const img = new Image();
+  img.src = l.icon;
+  return img;
+});
+
 
 
 ////////////////////////////////////////////////////////////
@@ -270,9 +282,12 @@ function createNote(lane, time) {
   const approach = APPROACH_TIME;
   const spawnTime = time - approach;
 
-  // Lane target is fixed (PD-style). Notes fly toward the lane's circle.
-  const tx = LANES[lane].x * width;
-  const ty = LANES[lane].y * height;
+  // Pick a target somewhere in the "middle" region of the screen.
+  // The button you press (lane) is still decided by the chart.
+  const mX = width * 0.22;
+  const mY = height * 0.22;
+  const tx = mX + Math.random() * (width - mX * 2);
+  const ty = mY + Math.random() * (height - mY * 2);
 
   const cx = width / 2;
   const cy = height / 2;
@@ -315,13 +330,14 @@ function generateNotes(t) {
 
     if (active >= 4) break;
 
-    createNote(
-      Math.floor(Math.random() * LANES.length),
-      beatTimes[nextBeatIndex]
-    );
-
+    // Enforce a small spacing between generated notes so they don't "machine-gun" spawn.
+    const bt = beatTimes[nextBeatIndex];
+    if (bt - lastSpawnedBeatTime >= MIN_NOTE_GAP) {
+      createNote(Math.floor(Math.random() * LANES.length), bt);
+      lastSpawnedBeatTime = bt;
+      active++;
+    }
     nextBeatIndex++;
-    active++;
   }
 }
 
@@ -373,47 +389,50 @@ function handleKey(key) {
   judge(earliest, t);
 }
 
-canvas.addEventListener("mousedown", e => {
-  // Convert CSS pixels (what the browser reports) into canvas pixels (DPR-scaled).
+canvas.addEventListener("mousedown", (e) => {
+  // Browser events report positions in CSS pixels.
+  // Our draw math also uses CSS pixels (we scale internally using DPR).
   const r = canvas.getBoundingClientRect();
-  const sx = canvas.width / r.width;
-  const sy = canvas.height / r.height;
-  hitAt((e.clientX - r.left) * sx,
-        (e.clientY - r.top) * sy);
+  hitAt(e.clientX - r.left, e.clientY - r.top);
 });
 
-canvas.addEventListener("touchstart", e => {
-  // Same conversion as mouse, plus prevent the page from scrolling.
+canvas.addEventListener("touchstart", (e) => {
   const r = canvas.getBoundingClientRect();
   const t0 = e.touches[0];
-  const sx = canvas.width / r.width;
-  const sy = canvas.height / r.height;
-  hitAt((t0.clientX - r.left) * sx,
-        (t0.clientY - r.top) * sy);
+  hitAt(t0.clientX - r.left, t0.clientY - r.top);
   e.preventDefault();
-}, { passive:false });
+}, { passive: false });
 
 function hitAt(x, y) {
   const t = getSongTime();
   const r = Math.min(width, height) * BASE_R_SCALE;
 
-  // Determine intended lane (nearest target circle)
-  let lane = -1;
+  // Touch/mouse input: pick the closest on-screen note to where you tapped/clicked.
+  // (Keyboard input still uses "earliest note in that lane".)
+  let best = null;
   let bestDist = Infinity;
 
-  for (let i = 0; i < LANES.length; i++) {
-    const tx = LANES[i].x * width;
-    const ty = LANES[i].y * height;
-    const dist = Math.hypot(x - tx, y - ty);
-    if (dist < bestDist) { bestDist = dist; lane = i; }
+  for (const n of notes) {
+    if (n.judged) continue;
+    if (t < n.spawnTime) continue;
+    if (t > n.time + HIT_WINDOW_MISS) continue;
+
+    // Current drawn position of the note right now.
+    let prog = (t - n.spawnTime) / n.approach;
+    prog = Math.max(0, Math.min(1, prog));
+
+    const nx = lerp(n.spawnX, n.targetX, prog);
+    const ny = lerp(n.spawnY, n.targetY, prog);
+
+    const d = Math.hypot(x - nx, y - ny);
+    if (d < bestDist) { bestDist = d; best = n; }
   }
 
-  if (lane === -1 || bestDist > r * 1.2) return;
+  if (!best) return;
+  if (bestDist > r * 1.35) return;
+  if (!laneIsHittable(best, t)) return;
 
-  const earliest = findEarliestLaneNote(lane);
-  if (!laneIsHittable(earliest, t)) return;
-
-  judge(earliest, t);
+  judge(best, t);
 }
 
 ////////////////////////////////////////////////////////////
@@ -533,7 +552,7 @@ for (const n of notes) {
     ctx.stroke();
     ctx.restore();
 
-    // Body
+    // Body (ring + optional sprite)
     ctx.save();
     ctx.fillStyle = "rgba(255,255,255,0.9)";
     ctx.strokeStyle = LANES[n.lane].color;
@@ -543,11 +562,19 @@ for (const n of notes) {
     ctx.fill();
     ctx.stroke();
 
-    ctx.fillStyle = LANES[n.lane].color;
-    ctx.font = `${r * 1.2}px Arial Black`;
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText(LANES[n.lane].label, x, y + r * 0.05);
+    // If the sprite is available, draw it centered on the note.
+    // Otherwise, fall back to the old letter-in-circle look.
+    const img = laneIcons[n.lane];
+    const size = r * 2.1;
+    if (img && img.complete && img.naturalWidth) {
+      ctx.drawImage(img, x - size / 2, y - size / 2, size, size);
+    } else {
+      ctx.fillStyle = LANES[n.lane].color;
+      ctx.font = `${r * 1.2}px Arial Black`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(LANES[n.lane].label, x, y + r * 0.05);
+    }
     ctx.restore();
   } else {
     const age = t - n.effectTime;
@@ -639,7 +666,8 @@ function loop() {
   renderFrame(t);
 
   for (const n of notes) {
-    if (!n.judged && t > n.time + HIT_WINDOW_GOOD + MISS_EXTRA) {
+    // If a note is past the miss window, mark it missed so it doesn't block future hits.
+    if (!n.judged && t > n.time + HIT_WINDOW_MISS) {
       registerMiss(n);
     }
   }
@@ -671,6 +699,7 @@ async function startGame() {
   try {
     await prepareAutoChart();
     nextBeatIndex = 0;
+    lastSpawnedBeatTime = -Infinity;
     try { audio.currentTime = 0; } catch(e) {}
     console.log("START t=", getSongTime());
   } catch (e) {
@@ -714,6 +743,7 @@ window.PBEngine = {
     beatTimes = [];
     autoChartReady = false;
     nextBeatIndex = 0;
+    lastSpawnedBeatTime = -Infinity;
     notes = [];
     noteSeq = 0;
     particles = [];

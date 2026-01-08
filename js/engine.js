@@ -102,10 +102,22 @@ setInterval(() => {
 // GAME CONSTANTS
 ////////////////////////////////////////////////////////////
 let BPM = 120;
-const BEAT = 60 / BPM;
+let BEAT = 60 / BPM;
 
-let APPROACH_TIME = 1.4 + (240 / BPM);
+let DIFF = "Normal";
+const APPROACH_BY_DIFF = { Easy: 3.2, Normal: 2.8, Hard: 2.4, Extreme: 2.0 };
+
+let APPROACH_TIME = APPROACH_BY_DIFF[DIFF] ?? 2.8;
 let smoothedApproach = APPROACH_TIME;
+
+function setBpm(v) {
+  BPM = Number(v) || 120;
+  BEAT = 60 / BPM;
+}
+function applyDifficulty() {
+  APPROACH_TIME = APPROACH_BY_DIFF[DIFF] ?? 2.8;
+  smoothedApproach = APPROACH_TIME;
+}
 
 const HIT_WINDOW_PERFECT = 0.08;
 const HIT_WINDOW_GOOD = 0.18;
@@ -672,7 +684,9 @@ window.PBEngine = {
   setSong: (audioSrc, mvSrc) => {
     if (audioSrc) audio.src = audioSrc;
     if (mvSrc) mv.src = mvSrc;
+    if (window.PB_MENU_STATE?.bpm) setBpm(window.PB_MENU_STATE.bpm);
 
+     
     // reset run state
     beatTimes = [];
     autoChartReady = false;
@@ -683,6 +697,10 @@ window.PBEngine = {
     combo = 0;
     lastHitText = "";
     lastHitTime = 0;
+    setDifficulty: (name) => {
+  DIFF = name || "Normal";
+  applyDifficulty();
+},
 
     // hide MV until playback confirmed
     mv.style.opacity = "0";

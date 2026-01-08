@@ -123,6 +123,7 @@ function applyDifficulty() {
   smoothedApproach = APPROACH_TIME;
 }
 
+const MAX_ALIVE_BY_DIFF = { Easy: 1, Normal: 1, Hard: 2, Extreme: 3 };
 const HIT_WINDOW_PERFECT = 0.08;
 const HIT_WINDOW_GOOD = 0.18;
 const HIT_WINDOW_MISS = 0.35;
@@ -321,6 +322,7 @@ function createNote(lane, time) {
 function generateNotes(t) {
   if (!autoChartReady) return;
 
+  const maxAlive = MAX_ALIVE_BY_DIFF[DIFF] ?? 1;
   // Count active notes once so we don't repeatedly scan the array in the loop.
   let active = 0;
   for (const n of notes) if (!n.judged) active++;
@@ -328,7 +330,8 @@ function generateNotes(t) {
   while (nextBeatIndex < beatTimes.length &&
          beatTimes[nextBeatIndex] < t + SPAWN_LOOKAHEAD) {
 
-    if (active >= 4) break;
+    if (active >= maxAlive) break;
+     
 
     // Enforce a small spacing between generated notes so they don't "machine-gun" spawn.
     const bt = beatTimes[nextBeatIndex];

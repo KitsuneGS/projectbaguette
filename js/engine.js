@@ -111,7 +111,7 @@ let DIFF = "Normal";
 const APPROACH_BY_DIFF = { Easy: 3.2, Normal: 2.8, Hard: 2.4, Extreme: 2.0 };
 
 let APPROACH_TIME = APPROACH_BY_DIFF[DIFF] ?? 2.8;
-let smoothedApproach = APPROACH_TIME;
+let n.approach = APPROACH_TIME;
 
 function setBpm(v) {
   BPM = Number(v) || 120;
@@ -119,7 +119,7 @@ function setBpm(v) {
 }
 function applyDifficulty() {
   APPROACH_TIME = APPROACH_BY_DIFF[DIFF] ?? 2.8;
-  smoothedApproach = APPROACH_TIME;
+  n.approach = APPROACH_TIME;
 }
 
 const HIT_WINDOW_PERFECT = 0.08;
@@ -263,14 +263,13 @@ function addParticles(x, y, color) {
 function lerp(a, b, t) { return a + (b - a) * t; }
 
 function createNote(lane, time) {
-  const mX = width * 0.15;
-  const mY = height * 0.15;
 
-  const tx = mX + Math.random() * (width - mX * 2);
-  const ty = mY + Math.random() * (height - mY * 2);
+const tx = LANES[lane].x * width;
+const ty = LANES[lane].y * height;
 
   const cx = width / 2;
   const cy = height / 2;
+  const spawnTime = time - APPROACH_TIME;
 
   const dx = tx - cx;
   const dy = ty - cy;
@@ -283,6 +282,8 @@ function createNote(lane, time) {
 notes.push({
   seq: noteSeq++,
   lane,
+  approach,
+  spawnTime,
   time,
   spawnX: tx - nx * spawnDist,
   spawnY: ty - ny * spawnDist,
@@ -306,6 +307,7 @@ function generateNotes(t) {
     createNote(
       Math.floor(Math.random() * LANES.length),
       beatTimes[nextBeatIndex]
+      const approach = APPROACH_TIME;  // or n.approach if you prefer
     );
 
     nextBeatIndex++;
@@ -487,12 +489,12 @@ function renderFrame(t) {
 // Notes
 for (const n of notes) {
   // Cull notes until their approach window begins
-  const spawnTime = n.time - smoothedApproach;
+  const spawnTime = n.time - n.approach;
   if (!n.judged && t < spawnTime) continue;
 
   if (!n.judged) {
     // progress 0..1 from spawn -> hit time
-    let prog = (t - spawnTime) / smoothedApproach;
+    let prog = (t - spawnTime) / n.approach;
     prog = Math.max(0, Math.min(1, prog));
 
     const x = lerp(n.spawnX, n.targetX, prog);
@@ -616,7 +618,7 @@ function loop() {
   const t = getSongTime();
 
   const active = notes.filter(n => !n.judged).length;
-  smoothedApproach = lerp(smoothedApproach, APPROACH_TIME + active * 0.12, 0.18);
+  n.approach = lerp(n.approach, APPROACH_TIME + active * 0.12, 0.18);
 
   generateNotes(t);
   renderFrame(t);

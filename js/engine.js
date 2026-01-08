@@ -218,6 +218,7 @@ async function prepareAutoChart() {
       for (let t = 0; t < dec.duration; t += 0.5) beatTimes.push(t);
     }
 
+    beatTimes.sort((a,b) => a - b);
     autoChartReady = true;
     console.log("AUTOGEN DONE:", beatTimes.length, "beats");
   } catch (e) {
@@ -233,6 +234,7 @@ async function prepareAutoChart() {
 // NOTE + PARTICLES
 ////////////////////////////////////////////////////////////
 let notes = [];
+let noteSeq = 0;
 let particles = [];
 let score = 0;
 let combo = 0;
@@ -275,18 +277,19 @@ function createNote(lane, time) {
 
   const spawnDist = Math.max(width, height) * 0.45;
 
-  notes.push({
-    lane,
-    time,
-    spawnX: tx - nx * spawnDist,
-    spawnY: ty - ny * spawnDist,
-    targetX: tx,
-    targetY: ty,
-    judged: false,
-    effect: "none",
-    effectTime: 0,
-    shakeSeed: Math.random() * Math.PI * 2
-  });
+notes.push({
+  seq: noteSeq++,
+  lane,
+  time,
+  spawnX: tx - nx * spawnDist,
+  spawnY: ty - ny * spawnDist,
+  targetX: tx,
+  targetY: ty,
+  judged: false,
+  effect: "none",
+  effectTime: 0,
+  shakeSeed: Math.random() * Math.PI * 2
+});
 }
 
 function generateNotes(t) {
@@ -311,21 +314,23 @@ function generateNotes(t) {
 // PD-style lane resolution: always judge the earliest pending note for that lane.
 // Prevents skipping older stacked notes (e.g., A A A A B) by accidentally selecting a newer one.
 function findEarliestLaneNote(lane) {
-  let earliest = null;
+  let best = null;
   for (const n of notes) {
     if (n.judged) continue;
     if (n.lane !== lane) continue;
-    if (!earliest || n.time < earliest.time) earliest = n;
-  }
-  return earliest;
-}
 
+    if (!best) best = n;
+    else if (n.time < best.time) best = n;
+    else if (n.time === best.time && (n.seq ?? 0) < (best.seq ?? 0)) best = n;
+  }
+  return best;
+}
 function laneIsHittable(note, t) {
   if (!note) return false;
   // Too early
   if (t < note.time - HIT_WINDOW_GOOD) return false;
   // Too late (still allow a bit beyond GOOD so late presses don't pick future notes)
-  if (t > note.time + 0.35) return false;
+  if (t > note.time + HIT_WINDOW_MISS) return false;
   return true;
 }
 
@@ -396,10 +401,11 @@ function hitAt(x, y) {
 ////////////////////////////////////////////////////////////
 function judge(n, t) {
   const d = Math.abs(n.time - t);
+  const HIT_WINDOW_MISS = 0.35;
 
   if (d <= HIT_WINDOW_PERFECT) registerHit(n, "COOL", 300);
   else if (d <= HIT_WINDOW_GOOD) registerHit(n, "FINE", 100);
-  else if (d <= 0.35) registerMiss(n);
+  else if (d <= HIT_WINDOW_MISS) registerMiss(n);
 }
 
 function registerHit(n, label, baseScore) {
@@ -479,11 +485,18 @@ function renderFrame(t) {
 
   // Notes
   for (const n of notes) {
-    const dt = n.time - t;
-    const prog = 1 - dt / smoothedApproach;
+   const dt = n.time - t;
+   const prog = 1 - dt / smoothedApproach;
 
-    if (!n.judged) {
-      if (prog < 0 || prog > 1.5) continue;
+if (!n.judged) {
+  if (t < spawnTime) continue;
+  if (!n.judged && t > n.time + HIT_WINDOW_MISS) {
+  registerMiss(n);
+  continue;
+}
+  if (t > n.time + 0.5) continue; // optional cull after it passes
+  ...
+}
 
       const x = lerp(n.spawnX, n.targetX, prog);
       const y = lerp(n.spawnY, n.targetY, prog);
@@ -692,20 +705,25 @@ window.PBEngine = {
     autoChartReady = false;
     nextBeatIndex = 0;
     notes = [];
+    noteSeq = 0;
     particles = [];
     score = 0;
     combo = 0;
     lastHitText = "";
     lastHitTime = 0;
-    setDifficulty: (name) => {
-  DIFF = name || "Normal";
-  applyDifficulty();
-},
+  },
 
     // hide MV until playback confirmed
     mv.style.opacity = "0";
     mv.style.display = "none";
   },
+
+
+   setDifficulty: (name) => {
+    DIFF = name || "Normal";
+    applyDifficulty();
+  },
+
   getState: () => ({ score, combo })
 };
 

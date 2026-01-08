@@ -2,7 +2,10 @@
 (() => {
   if (typeof p5 === "undefined") return;
 
-  new p5((p) => {
+  const PB_BG = { p: null };
+
+new p5((p) => {
+  PB_BG.p = p;
     let t = 0;
 
     p.setup = () => {
@@ -10,6 +13,7 @@
       const cnv = p.createCanvas(holder.clientWidth, holder.clientHeight);
       cnv.parent(holder);
       p.noStroke();
+  p.frameRate(30);
     };
 
     p.windowResized = () => {
@@ -18,6 +22,9 @@
     };
 
     p.draw = () => {
+  const menu = document.getElementById("menu-root");
+  if (menu && menu.style.display === "none") { p.noLoop(); return; }
+
       t += 0.01;
 
       const st = window.PB_MENU_STATE || { bpm: 120, diffIndex: 0 };
@@ -27,7 +34,7 @@
       p.background(10, 12, 20);
 
       const w = p.width, h = p.height;
-      const layers = 18;
+      const layers = 10;
 
       for (let i = 0; i < layers; i++) {
         const k = i / layers;
@@ -45,3 +52,8 @@
     };
   }, document.getElementById("bg-canvas-holder"));
 })();
+
+
+// Expose controls so the menu can pause/resume background
+window.PB_BG_STOP = () => { try { PB_BG.p && PB_BG.p.noLoop(); } catch(e) {} };
+window.PB_BG_START = () => { try { PB_BG.p && PB_BG.p.loop(); } catch(e) {} };

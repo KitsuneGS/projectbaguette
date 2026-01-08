@@ -123,6 +123,7 @@ let beatPulse = 1;
 
 let audioCtx = null;
 let analyser = null;
+let mediaSrc = null;
 let beatTimes = [];
 let autoChartReady = false;
 let nextBeatIndex = 0;
@@ -155,14 +156,16 @@ function getSongTime() {
 async function prepareAutoChart() {
   const AC = window.AudioContext || window.webkitAudioContext;
   if (!audioCtx) audioCtx = new AC();
-
-  const src = audioCtx.createMediaElementSource(audio);
-  analyser = audioCtx.createAnalyser();
-  analyser.fftSize = 2048;
-
-  src.connect(analyser);
-  analyser.connect(audioCtx.destination);
-
+  // Create & wire the audio graph ONCE (browsers forbid multiple MediaElementSources for one <audio>)
+  if (!analyser) {
+    analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 2048;
+  }
+  if (!mediaSrc) {
+    mediaSrc = audioCtx.createMediaElementSource(audio);
+    mediaSrc.connect(analyser);
+    analyser.connect(audioCtx.destination);
+  }
   try {
     const resp = await fetch(audio.src);
     const buf = await resp.arrayBuffer();
@@ -292,6 +295,28 @@ function generateNotes(t) {
 }
 
 
+
+// PD-style lane resolution: always judge the earliest pending note for that lane.
+// Prevents skipping older stacked notes (e.g., A A A A B) by accidentally selecting a newer one.
+function findEarliestLaneNote(lane) {
+  let earliest = null;
+  for (const n of notes) {
+    if (n.judged) continue;
+    if (n.lane !== lane) continue;
+    if (!earliest || n.time < earliest.time) earliest = n;
+  }
+  return earliest;
+}
+
+function laneIsHittable(note, t) {
+  if (!note) return false;
+  // Too early
+  if (t < note.time - HIT_WINDOW_GOOD) return false;
+  // Too late (still allow a bit beyond GOOD so late presses don't pick future notes)
+  if (t > note.time + 0.35) return false;
+  return true;
+}
+
 ////////////////////////////////////////////////////////////
 // INPUT
 ////////////////////////////////////////////////////////////
@@ -311,17 +336,10 @@ function handleKey(key) {
   if (lane === -1) return;
 
   const t = getSongTime();
-  let best = null;
-  let diff = Infinity;
+  const earliest = findEarliestLaneNote(lane);
+  if (!laneIsHittable(earliest, t)) return;
 
-  for (const n of notes) {
-    if (!n.judged && n.lane === lane) {
-      const d = Math.abs(n.time - t);
-      if (d < diff) { diff = d; best = n; }
-    }
-  }
-
-  if (best) judge(best, t);
+  judge(earliest, t);
 }
 
 canvas.addEventListener("mousedown", e => {
@@ -342,25 +360,24 @@ function hitAt(x, y) {
   const t = getSongTime();
   const r = Math.min(width, height) * BASE_R_SCALE;
 
-  let best = null;
-  let scoreVal = Infinity;
+  // Determine intended lane (nearest target circle)
+  let lane = -1;
+  let bestDist = Infinity;
 
-  for (const n of notes) {
-    if (n.judged) continue;
+  for (let i = 0; i < LANES.length; i++) {
+    const tx = LANES[i].x * width;
+    const ty = LANES[i].y * height;
+    const dist = Math.hypot(x - tx, y - ty);
+    if (dist < bestDist) { bestDist = dist; lane = i; }
+  }
 
-    const dx = x - n.targetX;
-    const dy = y - n.targetY;
-    const dist = Math.hypot(dx, dy);
+  if (lane === -1 || bestDist > r * 1.2) return;
 
-    if (dist > r * 1.2) continue;
+  const earliest = findEarliestLaneNote(lane);
+  if (!laneIsHittable(earliest, t)) return;
 
-    const td = Math.abs(n.time - t);
-    const val = td + dist / 1000;
-
-    if (val < scoreVal) {
-      scoreVal = val;
-      best = n;
-    }
+  judge(earliest, t);
+}
   }
 
   if (best) judge(best, t);

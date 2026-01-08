@@ -1,0 +1,16 @@
+[
+  {
+    "id": "demo",
+    "title": "Demo Song",
+    "artist": "Project Baguette",
+    "bpm": 120,
+    "audio": "assets/defaults/song-demo.mp3",
+    "mv": "assets/defaults/mv-default.mp4",
+    "charts": {
+      "Easy": 2,
+      "Normal": 5,
+      "Hard": 8,
+      "Extreme": 10
+    }
+  }
+]

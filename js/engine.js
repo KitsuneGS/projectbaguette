@@ -378,11 +378,6 @@ function hitAt(x, y) {
 
   judge(earliest, t);
 }
-  }
-
-  if (best) judge(best, t);
-}
-
 
 ////////////////////////////////////////////////////////////
 // JUDGE

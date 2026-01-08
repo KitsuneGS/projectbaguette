@@ -109,6 +109,12 @@ let BEAT = 60 / BPM;
 
 let DIFF = "Normal";
 const APPROACH_BY_DIFF = { Easy: 3.2, Normal: 2.8, Hard: 2.4, Extreme: 2.0 };
+const MAX_ALIVE_PER_LANE_BY_DIFF = {
+  Easy: 1,
+  Normal: 1,
+  Hard: 2,
+  Extreme: 3
+};
 
 let APPROACH_TIME = APPROACH_BY_DIFF[DIFF] ?? 2.8;
 // Smooth global approach for pacing (notes themselves store their own approach when spawned)
@@ -277,6 +283,14 @@ function addParticles(x, y, color) {
 ////////////////////////////////////////////////////////////
 function lerp(a, b, t) { return a + (b - a) * t; }
 
+function aliveCountInLane(lane) {
+  let c = 0;
+  for (const n of notes) {
+    if (!n.judged && n.lane === lane) c++;
+  }
+  return c;
+}
+
 function createNote(lane, time) {
   // Each note "locks in" its own approach timing at spawn.
   // This keeps visuals stable even if difficulty changes later.
@@ -334,13 +348,26 @@ function generateNotes(t) {
      
 
     // Enforce a small spacing between generated notes so they don't "machine-gun" spawn.
-    const bt = beatTimes[nextBeatIndex];
-    if (bt - lastSpawnedBeatTime >= MIN_NOTE_GAP) {
-      createNote(Math.floor(Math.random() * LANES.length), bt);
-      lastSpawnedBeatTime = bt;
-      active++;
-    }
-    nextBeatIndex++;
+  const bt = beatTimes[nextBeatIndex];
+
+if (bt - lastSpawnedBeatTime < MIN_NOTE_GAP) {
+  nextBeatIndex++;
+  continue;
+}
+
+const lane = Math.floor(Math.random() * LANES.length);
+const maxPerLane = MAX_ALIVE_PER_LANE_BY_DIFF[DIFF] ?? 1;
+
+if (aliveCountInLane(lane) >= maxPerLane) {
+  nextBeatIndex++;
+  continue;
+}
+
+createNote(lane, bt);
+lastSpawnedBeatTime = bt;
+nextBeatIndex++;
+active++;
+
   }
 }
 
@@ -460,6 +487,7 @@ function registerHit(n, label, baseScore) {
   lastHitTime = getSongTime();
 
   addParticles(n.targetX, n.targetY, LANES[n.lane].color);
+  LANES[n.lane].pulse = 1;
 }
 
 function registerMiss(n) {
@@ -480,13 +508,17 @@ let fps = 0;
 let lastFrame = performance.now();
 
 function renderFrame(t) {
-  ctx.clearRect(0,0,width,height);
+for (let i = 0; i < LANES.length; i++) {
+  LANES[i].pulse = Math.max(0, (LANES[i].pulse || 0) - 0.08);
+}
+   ctx.clearRect(0,0,width,height);
 
   const bp = (t % BEAT) / BEAT;
   beatPulse = 0.5 + 0.5 * Math.sin(bp * Math.PI * 2);
 
-  ctx.fillStyle = "rgba(0,0,0,0.22)";
-  ctx.fillRect(0,0,width,height);
+  ctx.fillStyle = `rgba(0,0,0,${0.18 + beatPulse * 0.06})`;
+  ctx.fillRect(0, 0, width, height);
+   
 
   // DEBUG BOX (makes it obvious the canvas is visible + notes exist)
   if (DEBUG) {
@@ -556,14 +588,15 @@ for (const n of notes) {
     ctx.restore();
 
     // Body (ring + optional sprite)
-    ctx.save();
-    ctx.fillStyle = "rgba(255,255,255,0.9)";
-    ctx.strokeStyle = LANES[n.lane].color;
-    ctx.lineWidth = 6;
-    ctx.beginPath();
-    ctx.arc(x, y, r, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
+ctx.save();
+ctx.fillStyle = "rgba(255,255,255,0.9)";
+ctx.strokeStyle = LANES[n.lane].color;
+ctx.lineWidth = 6;
+ctx.beginPath();
+ctx.arc(x, y, r, 0, Math.PI * 2);
+ctx.fill();
+ctx.stroke();
+ctx.restore();
 
     // If the sprite is available, draw it centered on the note.
     // Otherwise, fall back to the old letter-in-circle look.
@@ -578,7 +611,7 @@ for (const n of notes) {
       ctx.textBaseline = "middle";
       ctx.fillText(LANES[n.lane].label, x, y + r * 0.05);
     }
-    ctx.restore();
+    
   } else {
     const age = t - n.effectTime;
 

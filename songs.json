@@ -1,9 +1,9 @@
 [
   {
     "id": "demo",
-    "title": "Demo Song",
-    "artist": "Project Baguette",
-    "bpm": 120,
+    "title": "Teto Territory",
+    "artist": "2hot4tv",
+    "bpm": 172,
     "audio": "assets/defaults/song-demo.mp3",
     "mv": "assets/defaults/mv-default.mp4",
     "charts": {

@@ -157,10 +157,10 @@ let lastSpawnedBeatTime = -Infinity; // last note time we spawned (for spacing)
 // INPUT MAPPING
 ////////////////////////////////////////////////////////////
 const LANES = [
-  { key: "w", label: "W", color: "#FFD447", icon: "assets/sprites/triangle.png" },
-  { key: "a", label: "A", color: "#47FFA3", icon: "assets/sprites/square.png" },
-  { key: "s", label: "S", color: "#FF69B4", icon: "assets/sprites/x.png" },
-  { key: "d", label: "D", color: "#6AB4FF", icon: "assets/sprites/circle.png" }
+  { key: "w", label: "W", color: "#FFD447", icon: "assets/sprites/triangle.png", x: 0.50, y: 0.35 },
+  { key: "a", label: "A", color: "#47FFA3", icon: "assets/sprites/square.png",   x: 0.38, y: 0.50 },
+  { key: "s", label: "S", color: "#FF69B4", icon: "assets/sprites/x.png",        x: 0.50, y: 0.65 },
+  { key: "d", label: "D", color: "#6AB4FF", icon: "assets/sprites/circle.png",   x: 0.62, y: 0.50 }
 ];
 
 ////////////////////////////////////////////////////////////
@@ -173,6 +173,42 @@ const laneIcons = LANES.map((l) => {
   img.src = l.icon;
   return img;
 });
+
+// Sprite render helpers
+// We cache two versions per lane:
+//  - "white": the sprite turned into a white silhouette (keeps alpha, removes original color)
+//  - "tint": the sprite filled with the lane color (used for glow/overlay)
+const spriteCacheWhite = new Array(LANES.length).fill(null);
+const spriteCacheTint  = new Array(LANES.length).fill(null);
+
+function makeTintCanvas(img, color) {
+  const c = document.createElement("canvas");
+  c.width = img.naturalWidth || img.width;
+  c.height = img.naturalHeight || img.height;
+  const cctx = c.getContext("2d");
+  cctx.clearRect(0, 0, c.width, c.height);
+  cctx.drawImage(img, 0, 0);
+  cctx.globalCompositeOperation = "source-in";
+  cctx.fillStyle = color;
+  cctx.fillRect(0, 0, c.width, c.height);
+  cctx.globalCompositeOperation = "source-over";
+  return c;
+}
+
+function getWhiteSprite(lane) {
+  const img = laneIcons[lane];
+  if (!img || !img.complete || !img.naturalWidth) return null;
+  if (!spriteCacheWhite[lane]) spriteCacheWhite[lane] = makeTintCanvas(img, "#ffffff");
+  return spriteCacheWhite[lane];
+}
+
+function getTintSprite(lane) {
+  const img = laneIcons[lane];
+  if (!img || !img.complete || !img.naturalWidth) return null;
+  if (!spriteCacheTint[lane]) spriteCacheTint[lane] = makeTintCanvas(img, LANES[lane].color);
+  return spriteCacheTint[lane];
+}
+
 
 
 
@@ -291,18 +327,56 @@ function aliveCountInLane(lane) {
   return c;
 }
 
+
+// Deterministic tiny random: given the same seed, you get the same "random" number.
+// We use this so note jitter is stable (refreshing the page won't reshuffle note positions).
+function mulberry32(seed) {
+  let t = seed >>> 0;
+  return function () {
+    t += 0x6D2B79F5;
+    let r = Math.imul(t ^ (t >>> 15), 1 | t);
+    r ^= r + Math.imul(r ^ (r >>> 7), 61 | r);
+    return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// Notes aim toward a lane "anchor" point, with a small jitter so it feels less rigid.
+// Anchor is decided by lane; jitter is decided by note seq (so it's stable).
+function laneTargetWithJitter(lane, seq) {
+  const minDim = Math.min(width, height);
+  const jitterPx = minDim * 0.06; // small movement around the anchor (tune 0.03..0.08)
+  const rng = mulberry32((seq + 1) * 1337 + lane * 97);
+  const jx = (rng() - 0.5) * 2 * jitterPx;
+  const jy = (rng() - 0.5) * 2 * jitterPx;
+
+  const marginX = width * 0.18;
+  const marginY = height * 0.18;
+
+  const ax = LANES[lane].x * width;
+  const ay = LANES[lane].y * height;
+
+  // Keep targets in a "middle" band so they don't drift into UI/HUD edges.
+  const tx = Math.max(marginX, Math.min(width - marginX, ax + jx));
+  const ty = Math.max(marginY, Math.min(height - marginY, ay + jy));
+  return { tx, ty };
+}
+
 function createNote(lane, time) {
   // Each note "locks in" its own approach timing at spawn.
   // This keeps visuals stable even if difficulty changes later.
-  const approach = smoothedApproach;
+
+  // The button you press (lane) is still decided by the chart.
+  // Each note "locks in" its own approach timing at spawn.
+  // This keeps visuals stable even if difficulty changes later.
+  const approach = APPROACH_TIME;
   const spawnTime = time - approach;
 
-  // Pick a target somewhere in the "middle" region of the screen.
-  // The button you press (lane) is still decided by the chart.
-  const mX = width * 0.22;
-  const mY = height * 0.22;
-  const tx = mX + Math.random() * (width - mX * 2);
-  const ty = mY + Math.random() * (height - mY * 2);
+  // Lane anchor + small jitter (stable per note seq).
+  const { tx, ty } = laneTargetWithJitter(lane, noteSeq);
+
+  const cx = width / 2;
+  const cy = height / 2;
+
 
   const cx = width / 2;
   const cy = height / 2;
@@ -534,22 +608,29 @@ for (let i = 0; i < LANES.length; i++) {
 
   const r = Math.min(width, height) * BASE_R_SCALE;
 
-  // Ghosts
-  for (const n of notes) {
-    ctx.save();
-    ctx.globalAlpha = 0.18 + beatPulse * 0.22;
-    ctx.strokeStyle = LANES[n.lane].color;
-    ctx.lineWidth = 3;
-    ctx.beginPath();
-    ctx.arc(n.targetX, n.targetY, r * 0.9, 0, Math.PI * 2);
-    ctx.stroke();
+  // Lane anchors (subtle glow so you can see where to aim).
+  for (let i = 0; i < LANES.length; i++) {
+    const tx = LANES[i].x * width;
+    const ty = LANES[i].y * height;
+    const pulse = 1 + (LANES[i].pulse || 0) * 0.18;
 
-    ctx.globalAlpha = 0.05 + 0.10 * beatPulse;
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.arc(n.targetX, n.targetY, r * (0.7 + 0.3 * beatPulse), 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.restore();
+    const tint = getTintSprite(i);
+    const white = getWhiteSprite(i);
+    const size = r * 1.9 * pulse;
+
+    // If sprite exists, show a faint anchor hint using the tinted version.
+    // If it doesn't exist yet, we just skip the hint (game still works).
+    if (tint) {
+      ctx.save();
+      ctx.globalAlpha = 0.10 + beatPulse * 0.10;
+      ctx.drawImage(tint, tx - size / 2, ty - size / 2, size, size);
+      ctx.restore();
+    } else if (white) {
+      ctx.save();
+      ctx.globalAlpha = 0.08 + beatPulse * 0.08;
+      ctx.drawImage(white, tx - size / 2, ty - size / 2, size, size);
+      ctx.restore();
+    }
   }
 
 // Notes
@@ -584,57 +665,85 @@ for (const n of notes) {
     ctx.stroke();
     ctx.restore();
 
-    // Body (ring + optional sprite)
-ctx.save();
-ctx.fillStyle = "rgba(255,255,255,0.9)";
-ctx.strokeStyle = LANES[n.lane].color;
-ctx.lineWidth = 6;
-ctx.beginPath();
-ctx.arc(x, y, r, 0, Math.PI * 2);
-ctx.fill();
-ctx.stroke();
-ctx.restore();
+    // Sprite-only note: white base + colored overlay glow.
+    const base = getWhiteSprite(n.lane);
+    const tint = getTintSprite(n.lane);
 
-    // If the sprite is available, draw it centered on the note.
-    // Otherwise, fall back to the old letter-in-circle look.
-    const img = laneIcons[n.lane];
-    const size = r * 2.1;
-    if (img && img.complete && img.naturalWidth) {
-      ctx.drawImage(img, x - size / 2, y - size / 2, size, size);
-    } else {
+    // "Approach" feel: start slightly larger, settle to 1.0 at hit time.
+    const approachScale = 1.25 - 0.25 * prog;
+    const pulse = 1 + (LANES[n.lane].pulse || 0) * 0.20;
+    const size = r * 2.2 * approachScale * pulse;
+
+    if (tint) {
+      ctx.save();
+      ctx.globalAlpha = 0.20 + 0.10 * beatPulse;
+      ctx.drawImage(tint, x - (size * 1.18) / 2, y - (size * 1.18) / 2, size * 1.18, size * 1.18);
+      ctx.restore();
+    }
+    if (base) {
+      ctx.save();
+      ctx.globalAlpha = 0.95;
+      ctx.drawImage(base, x - size / 2, y - size / 2, size, size);
+      // Light overlay so it keeps a "white" look but still carries lane identity.
+      ctx.globalCompositeOperation = "source-atop";
+      ctx.globalAlpha = 0.18;
       ctx.fillStyle = LANES[n.lane].color;
-      ctx.font = `${r * 1.2}px Arial Black`;
+      ctx.fillRect(x - size / 2, y - size / 2, size, size);
+      ctx.restore();
+    } else {
+      // Sprite missing: minimal fallback (text only).
+      ctx.save();
+      ctx.globalAlpha = 0.95;
+      ctx.fillStyle = "#fff";
+      ctx.font = `${r * 1.1}px Arial Black`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.fillText(LANES[n.lane].label, x, y + r * 0.05);
+      ctx.fillText(LANES[n.lane].label, x, y);
+      ctx.restore();
     }
     
   } else {
     const age = t - n.effectTime;
 
     if (n.effect === "hit" && age <= HIT_FADE_TIME) {
-      ctx.save();
+      // PDiva-ish hit pop: sprite scales up and fades out.
       const p = age / HIT_FADE_TIME;
+      const size = r * 2.5 * (1 + p * 0.9);
+      const base = getWhiteSprite(n.lane);
+      const tint = getTintSprite(n.lane);
+
+      ctx.save();
       ctx.globalAlpha = 1 - p;
-      ctx.fillStyle = LANES[n.lane].color;
-      ctx.beginPath();
-      ctx.arc(n.targetX, n.targetY, r * (1 + p * 2.2), 0, Math.PI * 2);
-      ctx.fill();
+      if (tint) {
+        ctx.globalAlpha *= 0.45;
+        ctx.drawImage(tint, n.targetX - size / 2, n.targetY - size / 2, size, size);
+        ctx.globalAlpha = (1 - p);
+      }
+      if (base) {
+        ctx.drawImage(base, n.targetX - size / 2, n.targetY - size / 2, size, size);
+      }
       ctx.restore();
     } else if (n.effect === "miss" && age <= MISS_FADE_TIME) {
+      // Miss: sprite shakes a bit and falls down while fading out.
       const shake = Math.sin(age * MISS_SHAKE_FREQ * Math.PI * 2 + n.shakeSeed) * MISS_SHAKE_AMT;
+      const p = age / MISS_FADE_TIME;
+      const size = r * 2.2;
+      const base = getWhiteSprite(n.lane);
+      const tint = getTintSprite(n.lane);
 
-      ctx.globalAlpha = 1 - age / MISS_FADE_TIME;
       ctx.save();
-      ctx.fillStyle = "rgba(255,255,255,0.9)";
-      ctx.strokeStyle = LANES[n.lane].color;
-      ctx.lineWidth = 6;
-      ctx.beginPath();
-      ctx.arc(n.targetX + shake, n.targetY + age * MISS_FALL_SPEED, r, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
+      ctx.globalAlpha = 1 - p;
+      if (tint) {
+        ctx.globalAlpha *= 0.35;
+        ctx.drawImage(tint, (n.targetX + shake) - (size * 1.15) / 2, (n.targetY + age * MISS_FALL_SPEED) - (size * 1.15) / 2, size * 1.15, size * 1.15);
+        ctx.globalAlpha = 1 - p;
+      }
+      if (base) {
+        ctx.drawImage(base, (n.targetX + shake) - size / 2, (n.targetY + age * MISS_FALL_SPEED) - size / 2, size, size);
+      }
       ctx.restore();
       ctx.globalAlpha = 1;
+    }
     }
   }
 }

@@ -35,52 +35,40 @@ mv.style.transition = "opacity 1s ease";
 
 let width = window.innerWidth;
 let height = window.innerHeight;
-canvas.width = width;
-canvas.height = height;
+let dpr = window.devicePixelRatio || 1;
 
-window.addEventListener("resize", () => {
+// Make canvas resolution match the screen (prevents "drawing off-screen" / invisible notes)
+function fitCanvasToScreen() {
+  dpr = window.devicePixelRatio || 1;
   width = window.innerWidth;
   height = window.innerHeight;
-  canvas.width = width;
-  canvas.height = height;
-});
+
+  canvas.width = Math.floor(width * dpr);
+  canvas.height = Math.floor(height * dpr);
+
+  // Keep CSS size in CSS pixels
+  canvas.style.width = "100%";
+  canvas.style.height = "100%";
+
+  // Draw using CSS pixels (so all your math can stay in width/height)
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+
+window.addEventListener("resize", fitCanvasToScreen);
+fitCanvasToScreen();
+
+// iOS: prevent scrolling/gesture interference on the game canvas
+canvas.style.touchAction = "none";
 
 const isMobile = /iPhone|iPad|Android/i.test(navigator.userAgent);
 // 50% bigger circles on mobile (0.067 * 1.5 ≈ 0.10)
-const BASE_R_SCALE = isMobile ? 0.10 : 0.045;
+const UI_SCALE = 0.85; // shrink UI ~15%
+const BASE_R_SCALE = (isMobile ? 0.10 : 0.045) * UI_SCALE;
 
-// Scale the whole UI down a bit (requested: -15%)
+
+
+// Scales the whole UI down a bit (HUD + sprites + receptors)
 const UI_SCALE = 0.85;
-
-// Lightshow timing
-const BEAT_FLASH_TIME = 0.12;
-const SPAWN_FLASH_TIME = 0.18;
-let lastBeatFlashAt = -Infinity;
-
-// 10 fixed spawn patterns. The game cycles them randomly.
-// Each step decides (lane + small offset around that lane's anchor).
-const SPAWN_PATTERNS = [
-  [{ lane: 0, ox: -0.06, oy: -0.06 }, { lane: 1, ox:  0.06, oy: -0.06 }, { lane: 2, ox:  0.06, oy:  0.06 }, { lane: 3, ox: -0.06, oy:  0.06 }],
-  [{ lane: 0, ox:  0.06, oy: -0.06 }, { lane: 3, ox:  0.06, oy:  0.06 }, { lane: 2, ox: -0.06, oy:  0.06 }, { lane: 1, ox: -0.06, oy: -0.06 }],
-  [{ lane: 0, ox:  0.00, oy: -0.08 }, { lane: 2, ox:  0.00, oy:  0.08 }, { lane: 0, ox:  0.02, oy: -0.06 }, { lane: 2, ox: -0.02, oy:  0.06 }],
-  [{ lane: 1, ox: -0.08, oy:  0.00 }, { lane: 3, ox:  0.08, oy:  0.00 }, { lane: 1, ox: -0.06, oy:  0.02 }, { lane: 3, ox:  0.06, oy: -0.02 }],
-  [{ lane: 0, ox:  0.00, oy: -0.07 }, { lane: 3, ox:  0.07, oy:  0.00 }, { lane: 2, ox:  0.00, oy:  0.07 }, { lane: 1, ox: -0.07, oy:  0.00 }],
-  [{ lane: 0, ox:  0.00, oy: -0.07 }, { lane: 1, ox: -0.07, oy:  0.00 }, { lane: 2, ox:  0.00, oy:  0.07 }, { lane: 3, ox:  0.07, oy:  0.00 }],
-  [{ lane: 0, ox: -0.05, oy: -0.03 }, { lane: 3, ox:  0.05, oy: -0.03 }, { lane: 2, ox:  0.05, oy:  0.03 }, { lane: 1, ox: -0.05, oy:  0.03 }],
-  [{ lane: 0, ox:  0.05, oy: -0.03 }, { lane: 1, ox: -0.05, oy: -0.03 }, { lane: 2, ox: -0.05, oy:  0.03 }, { lane: 3, ox:  0.05, oy:  0.03 }],
-  [{ lane: 0, ox:  0.00, oy: -0.02 }, { lane: 1, ox: -0.02, oy:  0.00 }, { lane: 2, ox:  0.00, oy:  0.02 }, { lane: 3, ox:  0.02, oy:  0.00 }],
-  [{ lane: 0, ox:  0.00, oy: -0.10 }, { lane: 1, ox: -0.10, oy:  0.00 }, { lane: 2, ox:  0.00, oy:  0.10 }, { lane: 3, ox:  0.10, oy:  0.00 }]
-];
-
-let patternId = 0;
-let patternStep = 0;
-function pickNextPattern() {
-  const next = Math.floor(Math.random() * SPAWN_PATTERNS.length);
-  patternId = (next === patternId) ? ((next + 1) % SPAWN_PATTERNS.length) : next;
-  patternStep = 0;
-}
-
-
 ////////////////////////////////////////////////////////////
 // CREATE A SINGLE TAP-TO-START OVERLAY
 ////////////////////////////////////////////////////////////
@@ -96,12 +84,12 @@ startOverlay.style.cssText = `
   justify-content:center;
   color:white;
   font-family:Arial Black, sans-serif;
-  font-size:32px;
+  font-size:27px;
   z-index:99999;
 `;
 startOverlay.innerHTML = `
   <div style="opacity:0.9">PROJECT BAGUETTE</div>
-  <div id="tapText" style="margin-top:20px; font-size:20px; opacity:0.7;">Tap to Start</div>
+  <div id="tapText" style="margin-top:20px; font-size:17px; opacity:0.7;">Tap to Start</div>
 `;
 if (!window.__PB_MENU_MODE__) {
   document.body.appendChild(startOverlay);
@@ -121,15 +109,99 @@ setInterval(() => {
 // GAME CONSTANTS
 ////////////////////////////////////////////////////////////
 let BPM = 120;
-const BEAT = 60 / BPM;
+let BEAT = 60 / BPM;
 
-let APPROACH_TIME = 1.4 + (240 / BPM);
+let DIFF = "Normal";
+const APPROACH_BY_DIFF = { Easy: 3.2, Normal: 2.8, Hard: 2.4, Extreme: 2.0 };
+const MAX_ALIVE_PER_LANE_BY_DIFF = {
+  Easy: 1,
+  Normal: 1,
+  Hard: 2,
+  Extreme: 3
+};
+
+let APPROACH_TIME = APPROACH_BY_DIFF[DIFF] ?? 2.8;
+// Smooth global approach for pacing (notes themselves store their own approach when spawned)
 let smoothedApproach = APPROACH_TIME;
 
-const HIT_WINDOW_PERFECT = 0.08;
-const HIT_WINDOW_GOOD = 0.18;
+function setBpm(v) {
+  BPM = Number(v) || 120;
+  BEAT = 60 / BPM;
+}
+function applyDifficulty() {
+  APPROACH_TIME = APPROACH_BY_DIFF[DIFF] ?? 2.8;
+  smoothedApproach = APPROACH_TIME;
+}
+
+const MAX_ALIVE_BY_DIFF = { Easy: 4, Normal: 6, Hard: 8, Extreme: 10 };
+
+// Timing windows in seconds (bigger = more forgiving).
+const HIT_WINDOWS_BY_DIFF = {
+  Easy:    { perfect: 0.11, good: 0.25, miss: 0.45 },
+  Normal:  { perfect: 0.08, good: 0.18, miss: 0.35 },
+  Hard:    { perfect: 0.065, good: 0.15, miss: 0.30 },
+  Extreme: { perfect: 0.055, good: 0.13, miss: 0.27 }
+};
+function getHitWindows() {
+  return HIT_WINDOWS_BY_DIFF[DIFF] || HIT_WINDOWS_BY_DIFF.Normal;
+}
+
+// Auto-chart spacing (seconds) per difficulty.
+const MIN_NOTE_GAP_BY_DIFF = { Easy: 0.28, Normal: 0.22, Hard: 0.18, Extreme: 0.14 };
+function getMinNoteGap() {
+  return MIN_NOTE_GAP_BY_DIFF[DIFF] ?? 0.22;
+}
 
 const SPAWN_LOOKAHEAD = 8.0;
+
+// Spawn patterns: each pattern is a short repeating "lane sequence" plus fixed offsets.
+// Offsets are in fractions of the shorter screen dimension (min(width,height)).
+// This avoids nausea (no continuous drifting) but keeps variety.
+const SPAWN_PATTERNS = [
+  [{lane:0,dx:0.00,dy:-0.04,ang:-1.35},{lane:3,dx:0.03,dy:0.00,ang:-0.15},{lane:2,dx:0.00,dy:0.04,ang:1.35},{lane:1,dx:-0.03,dy:0.00,ang:3.00}],
+  [{lane:0,dx:0.00,dy:-0.04,ang:-1.80},{lane:1,dx:-0.03,dy:0.00,ang:-3.00},{lane:2,dx:0.00,dy:0.04,ang:1.80},{lane:3,dx:0.03,dy:0.00,ang:0.15}],
+  [{lane:0,dx:0.00,dy:-0.06,ang:-1.60},{lane:2,dx:0.00,dy:0.06,ang:1.60},{lane:0,dx:0.02,dy:-0.04,ang:-1.25},{lane:2,dx:-0.02,dy:0.04,ang:1.25}],
+  [{lane:1,dx:-0.06,dy:0.00,ang:3.14},{lane:3,dx:0.06,dy:0.00,ang:0.00},{lane:1,dx:-0.04,dy:0.02,ang:2.75},{lane:3,dx:0.04,dy:-0.02,ang:0.35}],
+  [{lane:0,dx:0.00,dy:-0.04,ang:-1.45},{lane:0,dx:0.02,dy:-0.02,ang:-1.10},{lane:3,dx:0.04,dy:0.00,ang:0.00},{lane:3,dx:0.02,dy:0.02,ang:0.35}],
+  [{lane:1,dx:-0.05,dy:-0.02,ang:-2.60},{lane:0,dx:0.00,dy:-0.06,ang:-1.55},{lane:3,dx:0.05,dy:0.02,ang:0.60},{lane:2,dx:0.00,dy:0.06,ang:1.55}],
+  [{lane:0,dx:0.00,dy:-0.05,ang:-1.70},{lane:2,dx:0.00,dy:0.05,ang:1.70},{lane:1,dx:-0.05,dy:0.00,ang:3.14},{lane:3,dx:0.05,dy:0.00,ang:0.00}],
+  [{lane:0,dx:0.01,dy:-0.05,ang:-1.45},{lane:3,dx:0.05,dy:0.00,ang:0.05},{lane:1,dx:-0.05,dy:0.00,ang:3.10}],
+  [{lane:2,dx:0.00,dy:0.05,ang:1.60},{lane:0,dx:0.00,dy:-0.05,ang:-1.60},{lane:2,dx:0.02,dy:0.03,ang:1.25},{lane:0,dx:-0.02,dy:-0.03,ang:-1.25}],
+  [{lane:1,dx:-0.04,dy:0.00,ang:3.14},{lane:0,dx:0.00,dy:-0.04,ang:-1.57},{lane:3,dx:0.04,dy:0.00,ang:0.00},{lane:2,dx:0.00,dy:0.04,ang:1.57}],
+];
+
+let currentPatternId = (Math.random() * SPAWN_PATTERNS.length) | 0;
+let currentPatternStep = 0;
+let beatsUntilPatternSwap = 0;
+
+function nextPatternEntry() {
+  if (beatsUntilPatternSwap <= 0) {
+    currentPatternId = (Math.random() * SPAWN_PATTERNS.length) | 0;
+    currentPatternStep = 0;
+    beatsUntilPatternSwap = 8 + ((Math.random() * 8) | 0); // 8..15
+  }
+  const pat = SPAWN_PATTERNS[currentPatternId];
+  const entry = pat[currentPatternStep % pat.length];
+  currentPatternStep++;
+  beatsUntilPatternSwap--;
+  return entry;
+}
+
+let spawnFlashTime = -999;
+let spawnFlashLane = 0;
+
+function triggerSpawnFlash(lane) {
+  spawnFlashTime = getSongTime();
+  spawnFlashLane = lane;
+  const tx = LANES[lane].x * width;
+  const ty = LANES[lane].y * height;
+  addParticles(tx, ty, LANES[lane].color);
+  LANES[lane].pulse = Math.max(LANES[lane].pulse || 0, 1);
+}
+
+
+// Turn off receptor/target markers for a cleaner PDiva-ish look.
+const SHOW_RECEPTORS = true; // show target markers (receptors)
 const MISS_EXTRA = 0.20;
 
 const HIT_FADE_TIME = 0.4;
@@ -146,15 +218,11 @@ let mediaSrc = null;
 let beatTimes = [];
 let autoChartReady = false;
 let nextBeatIndex = 0;
-    pickNextPattern();
-
-
+let lastSpawnedBeatTime = -Infinity; // last note time we spawned (for spacing)
 ////////////////////////////////////////////////////////////
 // INPUT MAPPING
 ////////////////////////////////////////////////////////////
 const LANES = [
-  // x/y are anchor points for each lane's target position (0..1 of screen).
-  // icon paths are where your sprites live.
   { key: "w", label: "W", color: "#FFD447", icon: "assets/sprites/triangle.png", x: 0.50, y: 0.35 },
   { key: "a", label: "A", color: "#47FFA3", icon: "assets/sprites/square.png",   x: 0.38, y: 0.50 },
   { key: "s", label: "S", color: "#FF69B4", icon: "assets/sprites/x.png",        x: 0.50, y: 0.65 },
@@ -162,22 +230,23 @@ const LANES = [
 ];
 
 ////////////////////////////////////////////////////////////
-// SPRITES (notes + receptors)
+// NOTE ICONS (SPRITES)
 ////////////////////////////////////////////////////////////
-// Notes are drawn as sprites (no filled circles behind them).
-// We tint the sprites at draw time by using cached canvases:
-//  - blue silhouette (main note body, so it isn't "washed out" white)
-//  - lane-color tint (used for glows / lightshow)
-const NOTE_BASE_BLUE = "#3B82F6";
-
+// If you add images at these paths, notes will render using them.
+// If an image is missing, the game falls back to drawing a circle + letter.
 const laneIcons = LANES.map((l) => {
   const img = new Image();
   img.src = l.icon;
   return img;
 });
 
-const spriteCacheBlue = new Array(LANES.length).fill(null);
-const spriteCacheTint = new Array(LANES.length).fill(null);
+// Sprite render helpers
+// We cache two versions per lane:
+//  - "white": the sprite turned into a white silhouette (keeps alpha, removes original color)
+//  - "tint": the sprite filled with the lane color (used for glow/overlay)
+const NOTE_TINT_COLOR = "#4AA3FF"; // blue tint for all note sprites
+const spriteCacheWhite = new Array(LANES.length).fill(null);
+const spriteCacheTint  = new Array(LANES.length).fill(null);
 
 function makeTintCanvas(img, color) {
   const c = document.createElement("canvas");
@@ -193,39 +262,20 @@ function makeTintCanvas(img, color) {
   return c;
 }
 
-function getBlueSprite(lane) {
+function getWhiteSprite(lane) {
   const img = laneIcons[lane];
   if (!img || !img.complete || !img.naturalWidth) return null;
-  if (!spriteCacheBlue[lane]) spriteCacheBlue[lane] = makeTintCanvas(img, NOTE_BASE_BLUE);
-  return spriteCacheBlue[lane];
+  if (!spriteCacheWhite[lane]) spriteCacheWhite[lane] = makeTintCanvas(img, "#ffffff");
+  return spriteCacheWhite[lane];
 }
+
 function getTintSprite(lane) {
   const img = laneIcons[lane];
   if (!img || !img.complete || !img.naturalWidth) return null;
-  if (!spriteCacheTint[lane]) spriteCacheTint[lane] = makeTintCanvas(img, LANES[lane].color);
+  if (!spriteCacheTint[lane]) spriteCacheTint[lane] = makeTintCanvas(img, NOTE_TINT_COLOR);
   return spriteCacheTint[lane];
 }
 
-// Consistent letter rendering (so "D" doesn't look bigger than the other letters).
-function drawLaneLabel(x, y, sizePx, text) {
-  ctx.save();
-  ctx.translate(x, y);
-
-  const base = sizePx * 0.78;
-  ctx.font = `900 ${base}px Arial Black`;
-  const m = ctx.measureText(text);
-
-  const box = sizePx * 0.95;
-  const w = Math.max(1, m.width);
-  const h = Math.max(1, (m.actualBoundingBoxAscent || base) + (m.actualBoundingBoxDescent || base * 0.2));
-  const s = Math.min(box / w, box / h);
-
-  ctx.scale(s, s);
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText(text, 0, 0);
-  ctx.restore();
-}
 
 
 
@@ -245,14 +295,16 @@ function getSongTime() {
 async function prepareAutoChart() {
   const AC = window.AudioContext || window.webkitAudioContext;
   if (!audioCtx) audioCtx = new AC();
-
-  if (!mediaSrc) mediaSrc = audioCtx.createMediaElementSource(audio);
-  analyser = audioCtx.createAnalyser();
-  analyser.fftSize = 2048;
-
-  mediaSrc.connect(analyser);
-  analyser.connect(audioCtx.destination);
-
+  // Create & wire the audio graph ONCE (browsers forbid multiple MediaElementSources for one <audio>)
+  if (!analyser) {
+    analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 2048;
+  }
+  if (!mediaSrc) {
+    mediaSrc = audioCtx.createMediaElementSource(audio);
+    mediaSrc.connect(analyser);
+    analyser.connect(audioCtx.destination);
+  }
   try {
     const resp = await fetch(audio.src);
     const buf = await resp.arrayBuffer();
@@ -293,11 +345,14 @@ async function prepareAutoChart() {
       for (let t = 0; t < dec.duration; t += 0.5) beatTimes.push(t);
     }
 
+    beatTimes.sort((a,b) => a - b);
     autoChartReady = true;
+    console.log("AUTOGEN DONE:", beatTimes.length, "beats");
   } catch (e) {
     console.error("Auto-chart decode fail:", e);
     for (let t = 0; t < 120; t += 0.5) beatTimes.push(t);
     autoChartReady = true;
+    console.log("AUTOGEN FALLBACK:", beatTimes.length, "beats");
   }
 }
 
@@ -306,6 +361,7 @@ async function prepareAutoChart() {
 // NOTE + PARTICLES
 ////////////////////////////////////////////////////////////
 let notes = [];
+let noteSeq = 0;
 let particles = [];
 let score = 0;
 let combo = 0;
@@ -330,36 +386,103 @@ function addParticles(x, y, color) {
 ////////////////////////////////////////////////////////////
 function lerp(a, b, t) { return a + (b - a) * t; }
 
-function createNote(lane, time, ox = 0, oy = 0) {
-  const approach = APPROACH_TIME;
-  const spawnTime = time - approach;
+function aliveCountInLane(lane) {
+  let c = 0;
+  for (const n of notes) {
+    if (!n.judged && n.lane === lane) c++;
+  }
+  return c;
+}
 
+
+// Deterministic tiny random: given the same seed, you get the same "random" number.
+// We use this so note jitter is stable (refreshing the page won't reshuffle note positions).
+function mulberry32(seed) {
+  let t = seed >>> 0;
+  return function () {
+    t += 0x6D2B79F5;
+    let r = Math.imul(t ^ (t >>> 15), 1 | t);
+    r ^= r + Math.imul(r ^ (r >>> 7), 61 | r);
+    return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// Notes aim toward a lane "anchor" point, with a small jitter so it feels less rigid.
+// Anchor is decided by lane; jitter is decided by note seq (so it's stable).
+function laneTargetWithJitter(lane, seq, timeSec) {
   const minDim = Math.min(width, height);
 
-  // Fixed anchor per lane + small pattern offset (no drifting).
+  // How far a lane target is allowed to wander around its anchor.
+  // Bigger = less "fixed lanes".
+  const jitterPx = minDim * 0.10;
+
+  // Tiny deterministic random so the same note always gets the same offset.
+  const rng = mulberry32((seq + 1) * 1337 + lane * 97);
+  const jx = (rng() - 0.5) * 2 * jitterPx;
+  const jy = (rng() - 0.5) * 2 * jitterPx;
+
+  // Slow "lane drift" so targets don't feel glued in place.
+  // This is based on timeSec, so different notes (different times) naturally vary.
+  const driftPx = minDim * 0.03;
+  const dx = Math.sin(timeSec * 0.9 + lane * 1.7) * driftPx;
+  const dy = Math.cos(timeSec * 0.7 + lane * 1.1) * driftPx;
+
+  const marginX = width * 0.18;
+  const marginY = height * 0.18;
+
   const ax = LANES[lane].x * width;
   const ay = LANES[lane].y * height;
 
-  // Tiny jitter so repeats don't look copy-pasted (stable-ish per seq).
-  const jx = (Math.random() - 0.5) * 2 * (minDim * 0.010);
-  const jy = (Math.random() - 0.5) * 2 * (minDim * 0.010);
+  // Keep targets in a "middle" band so they don't drift into UI/HUD edges.
+  const tx = Math.max(marginX, Math.min(width - marginX, ax + jx + dx));
+  const ty = Math.max(marginY, Math.min(height - marginY, ay + jy + dy));
+  return { tx, ty };
+}
+function createNote(lane, time, patternEntry) {
+  // Each note "locks in" its own approach timing at spawn.
+  // This keeps visuals stable even if difficulty changes later.
 
-  const marginX = width * 0.16;
-  const marginY = height * 0.16;
+  // The button you press (lane) is still decided by the chart.
+  // Each note "locks in" its own approach timing at spawn.
+  // This keeps visuals stable even if difficulty changes later.
+  const approach = APPROACH_TIME;
+  const spawnTime = time - approach;
 
-  const tx = Math.max(marginX, Math.min(width - marginX, ax + ox * minDim + jx));
-  const ty = Math.max(marginY, Math.min(height - marginY, ay + oy * minDim + jy));
+  // Lane anchor + small jitter (stable per note seq).
+  const baseT = laneTargetWithJitter(lane, noteSeq, time);
+  let tx = baseT.tx;
+  let ty = baseT.ty;
 
-  const cx = width / 2;
-  const cy = height / 2;
+  if (patternEntry) {
+    const minDim = Math.min(width, height);
+    tx += (patternEntry.dx || 0) * minDim;
+    ty += (patternEntry.dy || 0) * minDim;
+  }
 
-  const dx = tx - cx;
-  const dy = ty - cy;
-  const len = Math.hypot(dx, dy) || 1;
-  const nx = dx / len;
-  const ny = dy / len;
+  const marginX = width * 0.18;
+  const marginY = height * 0.18;
+  tx = Math.max(marginX, Math.min(width - marginX, tx));
+  ty = Math.max(marginY, Math.min(height - marginY, ty));
 
-  const spawnDist = Math.max(width, height) * 0.52;
+  const centerX = width / 2;
+  const centerY = height / 2;
+
+
+
+  // Spawn from outside the screen, traveling toward the target.
+  let nx, ny;
+  if (patternEntry && typeof patternEntry.ang === "number") {
+    nx = Math.cos(patternEntry.ang);
+    ny = Math.sin(patternEntry.ang);
+  } else {
+    const dx = tx - centerX;
+    const dy = ty - centerY;
+    const len = Math.hypot(dx, dy) || 1;
+    nx = dx / len;
+    ny = dy / len;
+  }
+
+  const spawnDist = Math.max(width, height) * 0.45;
 
   notes.push({
     seq: noteSeq++,
@@ -374,8 +497,8 @@ function createNote(lane, time, ox = 0, oy = 0) {
     judged: false,
     effect: "none",
     effectTime: 0,
-    spawnFxTime: spawnTime,
-    shakeSeed: Math.random() * Math.PI * 2
+    shakeSeed: Math.random() * Math.PI * 2,
+    spawned: false
   });
 }
 
@@ -391,51 +514,52 @@ function generateNotes(t) {
   while (nextBeatIndex < beatTimes.length && beatTimes[nextBeatIndex] < t + SPAWN_LOOKAHEAD) {
     if (active >= maxAlive) break;
 
+    // Enforce a small spacing between generated notes so they don't "machine-gun" spawn.
     const bt = beatTimes[nextBeatIndex];
-
-    // Choose lane + offset from the current pattern step.
-    const pat = SPAWN_PATTERNS[patternId];
-    const step = pat[patternStep % pat.length];
-
-    let lane = step.lane;
-    let ox = step.ox;
-    let oy = step.oy;
-
-    const maxPerLane = MAX_ALIVE_PER_LANE_BY_DIFF[DIFF] ?? 1;
-
-    // If intended lane is full, try other lanes quickly before skipping this beat.
-    if (aliveCountInLane(lane) >= maxPerLane) {
-      let found = false;
-      for (let tries = 1; tries < 4; tries++) {
-        const alt = pat[(patternStep + tries) % pat.length];
-        if (aliveCountInLane(alt.lane) < maxPerLane) {
-          lane = alt.lane; ox = alt.ox; oy = alt.oy;
-          found = true;
-          break;
-        }
-      }
-      if (!found) {
-        nextBeatIndex++;
-        patternStep++;
-        continue;
-      }
+    if (bt - lastSpawnedBeatTime < getMinNoteGap()) {
+      nextBeatIndex++;
+      continue;
     }
 
-    createNote(lane, bt, ox, oy);
+    const entry = nextPatternEntry();
+    const lane = entry.lane;
+    const maxPerLane = MAX_ALIVE_PER_LANE_BY_DIFF[DIFF] ?? 1;
 
-    // Beat flash for the lightshow
-    lastBeatFlashAt = bt;
+    // If this lane already has too many notes, skip this beat.
+    if (aliveCountInLane(lane) >= maxPerLane) {
+      nextBeatIndex++;
+      continue;
+    }
 
+    createNote(lane, bt, entry);
     lastSpawnedBeatTime = bt;
     nextBeatIndex++;
-    patternStep++;
     active++;
-
-    // Every few beats, swap to a new pattern so it feels fresh.
-    if (patternStep % 8 === 0) pickNextPattern();
   }
 }
 
+// PD-style lane resolution: always judge the earliest pending note for that lane.
+// Prevents skipping older stacked notes (e.g., A A A A B) by accidentally selecting a newer one.
+function findEarliestLaneNote(lane) {
+  let best = null;
+  for (const n of notes) {
+    if (n.judged) continue;
+    if (n.lane !== lane) continue;
+
+    if (!best) best = n;
+    else if (n.time < best.time) best = n;
+    else if (n.time === best.time && (n.seq ?? 0) < (best.seq ?? 0)) best = n;
+  }
+  return best;
+}
+function laneIsHittable(note, t) {
+  if (!note) return false;
+  // Too early
+  { const w = getHitWindows(); if (t < note.time - w.good) return false; }
+  // Too late (still allow a bit beyond GOOD so late presses don't pick future notes)
+  { const w = getHitWindows(); if (t > note.time + w.miss) return false; }
+  return true;
+}
 
 ////////////////////////////////////////////////////////////
 // INPUT
@@ -456,156 +580,67 @@ function handleKey(key) {
   if (lane === -1) return;
 
   const t = getSongTime();
-  let best = null;
-  let diff = Infinity;
+  const earliest = findEarliestLaneNote(lane);
+  if (!laneIsHittable(earliest, t)) return;
 
-  for (const n of notes) {
-    if (!n.judged && n.lane === lane) {
-      const d = Math.abs(n.time - t);
-      if (d < diff) { diff = d; best = n; }
-    }
-  }
-
-  if (best) judge(best, t);
+  judge(earliest, t);
 }
 
-canvas.addEventListener("mousedown", e => {
+canvas.addEventListener("mousedown", (e) => {
+  // Browser events report positions in CSS pixels.
+  // Our draw math also uses CSS pixels (we scale internally using DPR).
   const r = canvas.getBoundingClientRect();
-  hitAt((e.clientX - r.left) * (canvas.width / r.width),
-        (e.clientY - r.top) * (canvas.height / r.height));
+  hitAt(e.clientX - r.left, e.clientY - r.top);
 });
 
-canvas.addEventListener("touchstart", e => {
+canvas.addEventListener("touchstart", (e) => {
   const r = canvas.getBoundingClientRect();
-  const t = e.touches[0];
-  hitAt((t.clientX - r.left) * (canvas.width / r.width),
-        (t.clientY - r.top) * (canvas.height / r.height));
+  const t0 = e.touches[0];
+  hitAt(t0.clientX - r.left, t0.clientY - r.top);
   e.preventDefault();
-}, { passive:false });
+}, { passive: false });
 
 function hitAt(x, y) {
   const t = getSongTime();
-
   const r = Math.min(width, height) * BASE_R_SCALE * UI_SCALE;
 
-  // Whole-screen beat flash (happens when we spawn a note for a beat)
-  const beatFlashAge = t - lastBeatFlashAt;
-  if (beatFlashAge >= 0 && beatFlashAge <= BEAT_FLASH_TIME) {
-    const p = beatFlashAge / BEAT_FLASH_TIME;
-    ctx.save();
-    ctx.globalAlpha = (1 - p) * (0.35 + beatPulse * 0.25);
-    ctx.fillStyle = "rgba(59,130,246,1)";
-    ctx.fillRect(0, 0, width, height);
-    ctx.restore();
-  }
-
-  // Receptors (target circles): keep them, but make them feel alive.
-  for (let i = 0; i < LANES.length; i++) {
-    const tx = LANES[i].x * width;
-    const ty = LANES[i].y * height;
-
-    const lanePulse = (LANES[i].pulse || 0);
-    const beat = beatPulse;
-
-    const baseR = r * 1.15;
-    const beatR = baseR * (1.12 + beat * 0.26);
-    const hitR  = baseR * (1.15 + lanePulse * 1.10);
-
-    // glow halo
-    ctx.save();
-    ctx.translate(tx, ty);
-    ctx.globalAlpha = 0.70;
-    ctx.shadowColor = LANES[i].color;
-    ctx.shadowBlur = 28 + beat * 22 + lanePulse * 60;
-
-    // base ring
-    ctx.strokeStyle = "rgba(255,255,255,0.70)";
-    ctx.lineWidth = 3.5 + beat * 2.0;
-    ctx.beginPath();
-    ctx.arc(0, 0, baseR, 0, Math.PI * 2);
-    ctx.stroke();
-
-    // beat ring
-    ctx.globalAlpha = 0.30 + beat * 0.22;
-    ctx.strokeStyle = "rgba(255,255,255,0.85)";
-    ctx.lineWidth = 2.0 + beat * 2.6;
-    ctx.beginPath();
-    ctx.arc(0, 0, beatR, 0, Math.PI * 2);
-    ctx.stroke();
-
-    // hit ring (dashed + rotating)
-    if (lanePulse > 0.001) {
-      ctx.globalAlpha = Math.min(1, 0.92 * lanePulse + 0.10);
-      ctx.strokeStyle = LANES[i].color;
-      ctx.lineWidth = 4.0 + lanePulse * 7.0;
-      ctx.setLineDash([10, 8]);
-      ctx.lineDashOffset = -performance.now() * 0.02;
-      ctx.beginPath();
-      ctx.arc(0, 0, hitR, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.setLineDash([]);
-    }
-    ctx.restore();
-
-    // receptor sprite (blue base + tiny lane tint)
-    const base = getBlueSprite(i);
-    const tint = getTintSprite(i);
-    const size = r * 2.35 * (1 + lanePulse * 0.22);
-    if (base) {
-      ctx.save();
-      ctx.globalAlpha = 1.0;
-      ctx.drawImage(base, tx - size / 2, ty - size / 2, size, size);
-      if (tint) {
-        ctx.globalCompositeOperation = "source-atop";
-        ctx.globalAlpha = 0.12 + beat * 0.08;
-        ctx.drawImage(tint, tx - size / 2, ty - size / 2, size, size);
-      }
-      ctx.restore();
-    }
-
-    // lane label overlay (consistent sizing)
-    ctx.save();
-    ctx.fillStyle = "#fff";
-    ctx.globalAlpha = 0.92;
-    drawLaneLabel(tx, ty, r * 2.0, LANES[i].label);
-    ctx.restore();
-  }
-
-
+  // Touch/mouse input: pick the closest on-screen note to where you tapped/clicked.
+  // (Keyboard input still uses "earliest note in that lane".)
   let best = null;
-  let scoreVal = Infinity;
+  let bestDist = Infinity;
 
   for (const n of notes) {
     if (n.judged) continue;
+    if (t < n.spawnTime) continue;
+    if (t > n.time + getHitWindows().miss) continue;
 
-    const dx = x - n.targetX;
-    const dy = y - n.targetY;
-    const dist = Math.hypot(dx, dy);
+    // Current drawn position of the note right now.
+    let prog = (t - n.spawnTime) / n.approach;
+    prog = Math.max(0, Math.min(1, prog));
 
-    if (dist > r * 1.2) continue;
+    const nx = lerp(n.spawnX, n.targetX, prog);
+    const ny = lerp(n.spawnY, n.targetY, prog);
 
-    const td = Math.abs(n.time - t);
-    const val = td + dist / 1000;
-
-    if (val < scoreVal) {
-      scoreVal = val;
-      best = n;
-    }
+    const d = Math.hypot(x - nx, y - ny);
+    if (d < bestDist) { bestDist = d; best = n; }
   }
 
-  if (best) judge(best, t);
-}
+  if (!best) return;
+  if (bestDist > r * 1.35) return;
+  if (!laneIsHittable(best, t)) return;
 
+  judge(best, t);
+}
 
 ////////////////////////////////////////////////////////////
 // JUDGE
 ////////////////////////////////////////////////////////////
 function judge(n, t) {
   const d = Math.abs(n.time - t);
-
-  if (d <= HIT_WINDOW_PERFECT) registerHit(n, "COOL", 300);
-  else if (d <= HIT_WINDOW_GOOD) registerHit(n, "FINE", 100);
-  else if (d <= 0.35) registerMiss(n);
+  const w = getHitWindows();
+  if (d <= w.perfect) registerHit(n, "COOL", 300);
+  else if (d <= w.good) registerHit(n, "FINE", 100);
+  else if (d <= w.miss) registerMiss(n);
 }
 
 function registerHit(n, label, baseScore) {
@@ -620,6 +655,7 @@ function registerHit(n, label, baseScore) {
   lastHitTime = getSongTime();
 
   addParticles(n.targetX, n.targetY, LANES[n.lane].color);
+  LANES[n.lane].pulse = 1;
 }
 
 function registerMiss(n) {
@@ -639,149 +675,270 @@ function registerMiss(n) {
 let fps = 0;
 let lastFrame = performance.now();
 
-function draw(t) {
-  ctx.clearRect(0,0,width,height);
+function renderFrame(t) {
+for (let i = 0; i < LANES.length; i++) {
+  LANES[i].pulse = Math.max(0, (LANES[i].pulse || 0) - 0.05);
+}
+   ctx.clearRect(0,0,width,height);
 
   const bp = (t % BEAT) / BEAT;
   beatPulse = 0.5 + 0.5 * Math.sin(bp * Math.PI * 2);
 
-  ctx.fillStyle = "rgba(0,0,0,0.22)";
-  ctx.fillRect(0,0,width,height);
+  ctx.fillStyle = `rgba(0,0,0,${0.18 + beatPulse * 0.06})`;
+  ctx.fillRect(0, 0, width, height);
+const flashAge = t - spawnFlashTime;
+if (flashAge >= 0 && flashAge < 0.10) {
+  const p = 1 - flashAge / 0.10;
+  ctx.save();
+  ctx.globalAlpha = 0.22 * p;
+  ctx.fillStyle = LANES[spawnFlashLane].color;
+  ctx.fillRect(0, 0, width, height);
+  ctx.restore();
+}
+
+   
+
+  // DEBUG BOX (makes it obvious the canvas is visible + notes exist)
+  if (DEBUG) {
+    ctx.save();
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = "rgba(255,0,0,0.85)";
+    ctx.fillRect(16, 16, 240, 90);
+    ctx.fillStyle = "white";
+    ctx.font = "14px ui-monospace, SFMono-Regular, Menlo, monospace";
+    ctx.fillText("canvas OK", 28, 44);
+    ctx.fillText("t=" + t.toFixed(3), 28, 64);
+    ctx.fillText("activeNotes=" + notes.filter(n => !n.judged).length, 28, 84);
+    ctx.restore();
+  }
+
 
   const r = Math.min(width, height) * BASE_R_SCALE * UI_SCALE;
 
-  // Notes
-  for (const n of notes) {
-    const dt = n.time - t;
-    const prog = 1 - dt / smoothedApproach;
+  if (SHOW_RECEPTORS) {
+    // Target markers ("receptors"): these show where the notes are meant to end up.
+    // We draw:
+    //  - a base ring (always there)
+    //  - a beat ring (breathes with the music)
+    //  - a hit ring (pops when you hit that lane)
+    for (let i = 0; i < LANES.length; i++) {
+      // Lane anchors drift a bit so the playfield feels less rigid.
+      const minDim = Math.min(width, height);
+      const swayX = Math.sin(t * 0.9 + i * 1.7) * (minDim * 0.025);
+      const swayY = Math.cos(t * 0.7 + i * 1.1) * (minDim * 0.020);
 
-    if (!n.judged) {
-      if (prog < 0 || prog > 1.5) continue;
+      const tx = LANES[i].x * width + swayX;
+      const ty = LANES[i].y * height + swayY;
 
-      const x = lerp(n.spawnX, n.targetX, prog);
-      const y = lerp(n.spawnY, n.targetY, prog);
+      const lanePulse = (LANES[i].pulse || 0); // set in registerHit()
+      const beat = beatPulse; // 0..1-ish
 
-      // Trail
-      const dx = n.targetX - n.spawnX;
-      const dy = n.targetY - n.spawnY;
-      const len = Math.hypot(dx, dy) || 1;
-      const nx = dx / len;
-      const ny = dy / len;
+      const baseR = r * 1.15;
+      const beatR = baseR * (1.10 + beat * 0.22);
+      const hitR  = baseR * (1.10 + lanePulse * 0.95);
 
+      // Soft glow halo (stronger than before so it feels "alive")
       ctx.save();
-      ctx.globalAlpha = 0.25 + 0.15 * beatPulse;
-      ctx.strokeStyle = LANES[n.lane].color;
-      ctx.lineWidth = 10;
-      ctx.lineCap = "round";
+      ctx.translate(tx, ty);
+      ctx.globalAlpha = 0.55;
+      ctx.shadowColor = LANES[i].color;
+      ctx.shadowBlur = 40 + beat * 28 + lanePulse * 50;
+
+      // Base ring
+      ctx.strokeStyle = "rgba(255,255,255,0.65)";
+      ctx.lineWidth = 5.0 + beat * 2.5;
       ctx.beginPath();
-      ctx.moveTo(x - nx * 130, y - ny * 130);
-      ctx.lineTo(x, y);
+      ctx.arc(0, 0, baseR, 0, Math.PI * 2);
       ctx.stroke();
+
+      // Beat ring (slightly larger + fainter)
+      ctx.globalAlpha = 0.38 + beat * 0.25;
+      ctx.strokeStyle = "rgba(255,255,255,0.75)";
+      ctx.lineWidth = 3.0 + beat * 3.0;
+      ctx.beginPath();
+      ctx.arc(0, 0, beatR, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // Hit ring (pops out then decays via LANES[i].pulse)
+      if (lanePulse > 0.001) {
+        ctx.globalAlpha = Math.min(1, 1.15 * lanePulse + 0.20);
+        ctx.strokeStyle = LANES[i].color;
+        ctx.lineWidth = 6.0 + lanePulse * 10.0;
+        ctx.setLineDash([14, 8]); // dotted ring feels more "game-y"
+        ctx.lineDashOffset = -performance.now() * 0.02;
+        ctx.beginPath();
+        ctx.arc(0, 0, hitR, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
       ctx.restore();
 
-      // Body (sprite-only)
-      const base = getBlueSprite(n.lane);
-      const tint = getTintSprite(n.lane);
+      // Receptor sprite (white + a tiny tint overlay)
+      const base = getWhiteSprite(i);
+      const tint = getTintSprite(i);
+      const size = r * 2.35 * (1 + lanePulse * 0.20);
 
-      const lanePulse = (LANES[n.lane].pulse || 0);
-      const beat = beatPulse;
-
-      const approachScale = 1.35 - 0.35 * prog;
-      const size = r * 2.35 * approachScale * (1 + beat * 0.12 + lanePulse * 0.25);
-
-      // Spawn pop
-      const spawnAge = t - n.spawnFxTime;
-      if (spawnAge >= 0 && spawnAge <= SPAWN_FLASH_TIME) {
-        const p = spawnAge / SPAWN_FLASH_TIME;
-        ctx.save();
-        ctx.globalAlpha = (1 - p) * 0.95;
-        ctx.strokeStyle = LANES[n.lane].color;
-        ctx.lineWidth = 4 + (1 - p) * 10;
-        ctx.shadowColor = LANES[n.lane].color;
-        ctx.shadowBlur = 40 + (1 - p) * 60;
-        ctx.beginPath();
-        ctx.arc(x, y, (size * 0.65) * (1 + p * 0.9), 0, Math.PI * 2);
-        ctx.stroke();
-        ctx.restore();
-      }
-
-      // Glow behind
-      if (tint) {
-        ctx.save();
-        ctx.globalAlpha = 0.22 + beat * 0.12 + lanePulse * 0.28;
-        ctx.shadowColor = LANES[n.lane].color;
-        ctx.shadowBlur = 30 + beat * 25 + lanePulse * 55;
-        ctx.drawImage(tint, x - (size * 1.18) / 2, y - (size * 1.18) / 2, size * 1.18, size * 1.18);
-        ctx.restore();
-      }
-
-      // Main sprite
       if (base) {
         ctx.save();
-        ctx.globalAlpha = 1.0;
-        ctx.shadowColor = "rgba(255,255,255,0.35)";
-        ctx.shadowBlur = 8 + beat * 10;
-        ctx.drawImage(base, x - size / 2, y - size / 2, size, size);
-        ctx.restore();
+        ctx.globalAlpha = 0.82;
+        ctx.drawImage(base, tx - size / 2, ty - size / 2, size, size);
 
-        // Tiny lane tint so lanes still feel distinct
+        // Slight color hint so lanes still feel distinct.
         if (tint) {
-          ctx.save();
           ctx.globalCompositeOperation = "source-atop";
-          ctx.globalAlpha = 0.10 + beat * 0.06;
-          ctx.drawImage(tint, x - size / 2, y - size / 2, size, size);
-          ctx.restore();
+          ctx.globalAlpha = 0.20 + beat * 0.10;
+          ctx.drawImage(tint, tx - size / 2, ty - size / 2, size, size);
         }
-      } else {
-        // Sprite missing fallback: blue dot
-        ctx.save();
-        ctx.globalAlpha = 0.95;
-        ctx.fillStyle = NOTE_BASE_BLUE;
-        ctx.beginPath();
-        ctx.arc(x, y, r, 0, Math.PI * 2);
-        ctx.fill();
         ctx.restore();
-      }
-
-      // Label overlay (consistent sizing)
-      ctx.save();
-      ctx.fillStyle = "#fff";
-      ctx.globalAlpha = 0.92;
-      drawLaneLabel(x, y, r * 2.0, LANES[n.lane].label);
-      ctx.restore();
-    }
-
-    else {
-      const age = t - n.effectTime;
-
-      if (n.effect === "hit" && age <= HIT_FADE_TIME) {
-        ctx.save();
-        const p = age / HIT_FADE_TIME;
-        ctx.globalAlpha = 1 - p;
-        ctx.fillStyle = LANES[n.lane].color;
-        ctx.beginPath();
-        ctx.arc(n.targetX, n.targetY, r * (1 + p * 2.2), 0, Math.PI * 2);
-        ctx.fill();
-        ctx.restore();
-      }
-
-      else if (n.effect === "miss" && age <= MISS_FADE_TIME) {
-        const shake = Math.sin(age * MISS_SHAKE_FREQ * Math.PI * 2 + n.shakeSeed) * MISS_SHAKE_AMT;
-
-        ctx.globalAlpha = 1 - age / MISS_FADE_TIME;
-        ctx.save();
-        ctx.fillStyle = "rgba(255,255,255,0.9)";
-        ctx.strokeStyle = LANES[n.lane].color;
-        ctx.lineWidth = 6;
-        ctx.beginPath();
-        ctx.arc(n.targetX + shake, n.targetY + age * MISS_FALL_SPEED, r, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.stroke();
-        ctx.restore();
-        ctx.globalAlpha = 1;
       }
     }
   }
+// Notes
+for (const n of notes) {
+  // Cull notes until their approach window begins
+  const spawnTime = n.spawnTime;
+  if (!n.judged && t < spawnTime) continue;
+
+  if (!n.judged && !n.spawned && t >= n.spawnTime) {
+    n.spawned = true;
+    triggerSpawnFlash(n.lane);
+  }
+
+  if (!n.judged) {
+    // progress 0..1 from spawn -> hit time
+    let prog = (t - spawnTime) / n.approach;
+    prog = Math.max(0, Math.min(1, prog));
+
+    const x = lerp(n.spawnX, n.targetX, prog);
+    const y = lerp(n.spawnY, n.targetY, prog);
+
+    // Trail
+    const dx = n.targetX - n.spawnX;
+    const dy = n.targetY - n.spawnY;
+    const len = Math.hypot(dx, dy) || 1;
+    const nx = dx / len;
+    const ny = dy / len;
+
+    ctx.save();
+    ctx.globalAlpha = 0.25 + 0.15 * beatPulse;
+    ctx.strokeStyle = LANES[n.lane].color;
+    ctx.lineWidth = 10;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(x - nx * 130, y - ny * 130);
+    ctx.lineTo(x, y);
+    ctx.stroke();
+    ctx.restore();
+
+    // Sprite-only note: white base + colored overlay glow.
+    const base = getWhiteSprite(n.lane);
+    const tint = getTintSprite(n.lane);
+
+    // "Approach" feel: start slightly larger, settle to 1.0 at hit time.
+    const approachScale = 1.28 - 0.28 * prog;
+
+    // Per-lane pulse from hits, plus a tiny per-note wobble so it doesn't feel static.
+    const lanePulse = (LANES[n.lane].pulse || 0);
+    const wobble = 1 + Math.sin(t * 8 + n.seq * 0.35) * 0.03;
+    const pulse = (1 + lanePulse * 0.22) * wobble;
+
+    const size = r * 2.2 * approachScale * pulse;
+
+    // Extra readability: an approach ring that shrinks toward the note.
+    ctx.save();
+    const ring = r * (2.2 - prog * 1.1);
+    ctx.globalAlpha = 0.22 + 0.10 * beatPulse;
+    ctx.strokeStyle = "rgba(255,255,255,0.75)";
+    ctx.lineWidth = 2.2 + beatPulse * 1.8;
+    ctx.beginPath();
+    ctx.arc(x, y, ring, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+
+    // Softer glow (the old one was washing the sprite out).
+    if (tint) {
+      ctx.save();
+      ctx.globalAlpha = 0.10 + 0.06 * beatPulse;
+      const glowSize = size * 1.08;
+      ctx.drawImage(tint, x - glowSize / 2, y - glowSize / 2, glowSize, glowSize);
+      ctx.restore();
+    }
+
+    if (base) {
+      // Small rotation makes motion feel "alive" without being distracting.
+      const rot = Math.sin((1 - prog) * 3.2 + n.seq * 0.18) * 0.10;
+
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(rot);
+      ctx.globalAlpha = 0.92;
+      ctx.drawImage(base, -size / 2, -size / 2, size, size);
+
+      // Light color hint so lanes still feel distinct (kept subtle for clarity).
+      ctx.globalCompositeOperation = "source-atop";
+      ctx.globalAlpha = 0.10;
+      ctx.fillStyle = LANES[n.lane].color;
+      ctx.fillRect(-size / 2, -size / 2, size, size);
+
+      ctx.restore();
+    } else {
+      // Sprite missing: minimal fallback (text only).
+      ctx.save();
+      ctx.globalAlpha = 0.82;
+      ctx.fillStyle = "#fff";
+      ctx.font = `${r * 1.1}px Arial Black`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(LANES[n.lane].label, x, y);
+      ctx.restore();
+    }
+
+    
+  } else {
+    const age = t - n.effectTime;
+
+    if (n.effect === "hit" && age <= HIT_FADE_TIME) {
+      // PDiva-ish hit pop: sprite scales up and fades out.
+      const p = age / HIT_FADE_TIME;
+      const size = r * 2.5 * (1 + p * 0.9);
+      const base = getWhiteSprite(n.lane);
+      const tint = getTintSprite(n.lane);
+
+      ctx.save();
+      ctx.globalAlpha = 1 - p;
+      if (tint) {
+        ctx.globalAlpha *= 0.45;
+        ctx.drawImage(tint, n.targetX - size / 2, n.targetY - size / 2, size, size);
+        ctx.globalAlpha = (1 - p);
+      }
+      if (base) {
+        ctx.drawImage(base, n.targetX - size / 2, n.targetY - size / 2, size, size);
+      }
+      ctx.restore();
+    } else if (n.effect === "miss" && age <= MISS_FADE_TIME) {
+      // Miss: sprite shakes a bit and falls down while fading out.
+      const shake = Math.sin(age * MISS_SHAKE_FREQ * Math.PI * 2 + n.shakeSeed) * MISS_SHAKE_AMT;
+      const p = age / MISS_FADE_TIME;
+      const size = r * 2.2;
+      const base = getWhiteSprite(n.lane);
+      const tint = getTintSprite(n.lane);
+
+      ctx.save();
+      ctx.globalAlpha = 1 - p;
+      if (tint) {
+        ctx.globalAlpha *= 0.35;
+        ctx.drawImage(tint, (n.targetX + shake) - (size * 1.15) / 2, (n.targetY + age * MISS_FALL_SPEED) - (size * 1.15) / 2, size * 1.15, size * 1.15);
+        ctx.globalAlpha = 1 - p;
+      }
+      if (base) {
+        ctx.drawImage(base, (n.targetX + shake) - size / 2, (n.targetY + age * MISS_FALL_SPEED) - size / 2, size, size);
+      }
+      ctx.restore();
+      ctx.globalAlpha = 1;
+    }
+  }
+}
 
   // Particles
   for (let p of particles) {
@@ -840,10 +997,11 @@ function loop() {
   smoothedApproach = lerp(smoothedApproach, APPROACH_TIME + active * 0.12, 0.18);
 
   generateNotes(t);
-  draw(t);
+  renderFrame(t);
 
   for (const n of notes) {
-    if (!n.judged && t > n.time + HIT_WINDOW_GOOD + MISS_EXTRA) {
+    // If a note is past the miss window, mark it missed so it doesn't block future hits.
+    if (!n.judged && t > n.time + getHitWindows().miss) {
       registerMiss(n);
     }
   }
@@ -872,9 +1030,15 @@ async function startGame() {
   }
 
   // Build auto-chart BEFORE playing audio
-  try { await prepareAutoChart(); }
-  catch (e) { console.warn("Auto-chart early fail:", e); }
-
+  try {
+    await prepareAutoChart();
+    nextBeatIndex = 0;
+    lastSpawnedBeatTime = -Infinity;
+    try { audio.currentTime = 0; } catch(e) {}
+    console.log("START t=", getSongTime());
+  } catch (e) {
+    console.warn("Auto-chart early fail:", e);
+  }
   // Try to start audio
   try { await audio.play(); }
   catch(e) { throw e; }
@@ -903,15 +1067,19 @@ async function startGame() {
 // Expose a tiny API for the menu
 window.PBEngine = {
   start: startGame,
+
   setSong: (audioSrc, mvSrc) => {
     if (audioSrc) audio.src = audioSrc;
     if (mvSrc) mv.src = mvSrc;
+    if (window.PB_MENU_STATE?.bpm) setBpm(window.PB_MENU_STATE.bpm);
 
     // reset run state
     beatTimes = [];
     autoChartReady = false;
     nextBeatIndex = 0;
+    lastSpawnedBeatTime = -Infinity;
     notes = [];
+    noteSeq = 0;
     particles = [];
     score = 0;
     combo = 0;
@@ -922,6 +1090,12 @@ window.PBEngine = {
     mv.style.opacity = "0";
     mv.style.display = "none";
   },
+
+  setDifficulty: (name) => {
+    DIFF = name || "Normal";
+    applyDifficulty();
+  },
+
   getState: () => ({ score, combo })
 };
 

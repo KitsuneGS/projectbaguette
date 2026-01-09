@@ -852,9 +852,8 @@ if (flashAge >= 0 && flashAge < 0.10) {
     for (let i = 0; i < LANES.length; i++) {
       // Lane anchors drift a bit so the playfield feels less rigid.
       const minDim = Math.min(width, height);
-      const swayX = Math.sin(t * 0.9 + i * 1.7) * (minDim * 0.025);
-      const swayY = Math.cos(t * 0.7 + i * 1.1) * (minDim * 0.020);
-
+      const swayX = 0;
+      const swayY = 0;
       const tx = LANES[i].x * width + swayX;
       const ty = LANES[i].y * height + swayY;
 

@@ -65,6 +65,9 @@ const isMobile = /iPhone|iPad|Android/i.test(navigator.userAgent);
 const BASE_R_SCALE = isMobile ? 0.10 : 0.045;
 
 
+
+// Scales the whole UI down a bit (HUD + sprites + receptors)
+const UI_SCALE = 0.85;
 ////////////////////////////////////////////////////////////
 // CREATE A SINGLE TAP-TO-START OVERLAY
 ////////////////////////////////////////////////////////////
@@ -80,12 +83,12 @@ startOverlay.style.cssText = `
   justify-content:center;
   color:white;
   font-family:Arial Black, sans-serif;
-  font-size:32px;
+  font-size:27px;
   z-index:99999;
 `;
 startOverlay.innerHTML = `
   <div style="opacity:0.9">PROJECT BAGUETTE</div>
-  <div id="tapText" style="margin-top:20px; font-size:20px; opacity:0.7;">Tap to Start</div>
+  <div id="tapText" style="margin-top:20px; font-size:17px; opacity:0.7;">Tap to Start</div>
 `;
 if (!window.__PB_MENU_MODE__) {
   document.body.appendChild(startOverlay);
@@ -358,12 +361,23 @@ function mulberry32(seed) {
 
 // Notes aim toward a lane "anchor" point, with a small jitter so it feels less rigid.
 // Anchor is decided by lane; jitter is decided by note seq (so it's stable).
-function laneTargetWithJitter(lane, seq) {
+function laneTargetWithJitter(lane, seq, timeSec) {
   const minDim = Math.min(width, height);
-  const jitterPx = minDim * 0.06; // small movement around the anchor (tune 0.03..0.08)
+
+  // How far a lane target is allowed to wander around its anchor.
+  // Bigger = less "fixed lanes".
+  const jitterPx = minDim * 0.10;
+
+  // Tiny deterministic random so the same note always gets the same offset.
   const rng = mulberry32((seq + 1) * 1337 + lane * 97);
   const jx = (rng() - 0.5) * 2 * jitterPx;
   const jy = (rng() - 0.5) * 2 * jitterPx;
+
+  // Slow "lane drift" so targets don't feel glued in place.
+  // This is based on timeSec, so different notes (different times) naturally vary.
+  const driftPx = minDim * 0.03;
+  const dx = Math.sin(timeSec * 0.9 + lane * 1.7) * driftPx;
+  const dy = Math.cos(timeSec * 0.7 + lane * 1.1) * driftPx;
 
   const marginX = width * 0.18;
   const marginY = height * 0.18;
@@ -372,11 +386,10 @@ function laneTargetWithJitter(lane, seq) {
   const ay = LANES[lane].y * height;
 
   // Keep targets in a "middle" band so they don't drift into UI/HUD edges.
-  const tx = Math.max(marginX, Math.min(width - marginX, ax + jx));
-  const ty = Math.max(marginY, Math.min(height - marginY, ay + jy));
+  const tx = Math.max(marginX, Math.min(width - marginX, ax + jx + dx));
+  const ty = Math.max(marginY, Math.min(height - marginY, ay + jy + dy));
   return { tx, ty };
 }
-
 function createNote(lane, time) {
   // Each note "locks in" its own approach timing at spawn.
   // This keeps visuals stable even if difficulty changes later.
@@ -388,7 +401,7 @@ function createNote(lane, time) {
   const spawnTime = time - approach;
 
   // Lane anchor + small jitter (stable per note seq).
-  const { tx, ty } = laneTargetWithJitter(lane, noteSeq);
+  const { tx, ty } = laneTargetWithJitter(lane, noteSeq, time);
 
   const centerX = width / 2;
   const centerY = height / 2;
@@ -520,7 +533,7 @@ canvas.addEventListener("touchstart", (e) => {
 
 function hitAt(x, y) {
   const t = getSongTime();
-  const r = Math.min(width, height) * BASE_R_SCALE;
+  const r = Math.min(width, height) * BASE_R_SCALE * UI_SCALE;
 
   // Touch/mouse input: pick the closest on-screen note to where you tapped/clicked.
   // (Keyboard input still uses "earliest note in that lane".)
@@ -621,7 +634,7 @@ for (let i = 0; i < LANES.length; i++) {
   }
 
 
-  const r = Math.min(width, height) * BASE_R_SCALE;
+  const r = Math.min(width, height) * BASE_R_SCALE * UI_SCALE;
 
   if (SHOW_RECEPTORS) {
     // Target markers ("receptors"): these show where the notes are meant to end up.
@@ -630,8 +643,13 @@ for (let i = 0; i < LANES.length; i++) {
     //  - a beat ring (breathes with the music)
     //  - a hit ring (pops when you hit that lane)
     for (let i = 0; i < LANES.length; i++) {
-      const tx = LANES[i].x * width;
-      const ty = LANES[i].y * height;
+      // Lane anchors drift a bit so the playfield feels less rigid.
+      const minDim = Math.min(width, height);
+      const swayX = Math.sin(t * 0.9 + i * 1.7) * (minDim * 0.025);
+      const swayY = Math.cos(t * 0.7 + i * 1.1) * (minDim * 0.020);
+
+      const tx = LANES[i].x * width + swayX;
+      const ty = LANES[i].y * height + swayY;
 
       const lanePulse = (LANES[i].pulse || 0); // set in registerHit()
       const beat = beatPulse; // 0..1-ish
@@ -734,25 +752,51 @@ for (const n of notes) {
     const tint = getTintSprite(n.lane);
 
     // "Approach" feel: start slightly larger, settle to 1.0 at hit time.
-    const approachScale = 1.25 - 0.25 * prog;
-    const pulse = 1 + (LANES[n.lane].pulse || 0) * 0.20;
+    const approachScale = 1.28 - 0.28 * prog;
+
+    // Per-lane pulse from hits, plus a tiny per-note wobble so it doesn't feel static.
+    const lanePulse = (LANES[n.lane].pulse || 0);
+    const wobble = 1 + Math.sin(t * 8 + n.seq * 0.35) * 0.03;
+    const pulse = (1 + lanePulse * 0.22) * wobble;
+
     const size = r * 2.2 * approachScale * pulse;
 
+    // Extra readability: an approach ring that shrinks toward the note.
+    ctx.save();
+    const ring = r * (2.2 - prog * 1.1);
+    ctx.globalAlpha = 0.22 + 0.10 * beatPulse;
+    ctx.strokeStyle = "rgba(255,255,255,0.75)";
+    ctx.lineWidth = 2.2 + beatPulse * 1.8;
+    ctx.beginPath();
+    ctx.arc(x, y, ring, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+
+    // Softer glow (the old one was washing the sprite out).
     if (tint) {
       ctx.save();
-      ctx.globalAlpha = 0.20 + 0.10 * beatPulse;
-      ctx.drawImage(tint, x - (size * 1.18) / 2, y - (size * 1.18) / 2, size * 1.18, size * 1.18);
+      ctx.globalAlpha = 0.10 + 0.06 * beatPulse;
+      const glowSize = size * 1.08;
+      ctx.drawImage(tint, x - glowSize / 2, y - glowSize / 2, glowSize, glowSize);
       ctx.restore();
     }
+
     if (base) {
+      // Small rotation makes motion feel "alive" without being distracting.
+      const rot = Math.sin((1 - prog) * 3.2 + n.seq * 0.18) * 0.10;
+
       ctx.save();
-      ctx.globalAlpha = 0.95;
-      ctx.drawImage(base, x - size / 2, y - size / 2, size, size);
-      // Light overlay so it keeps a "white" look but still carries lane identity.
+      ctx.translate(x, y);
+      ctx.rotate(rot);
+      ctx.globalAlpha = 0.92;
+      ctx.drawImage(base, -size / 2, -size / 2, size, size);
+
+      // Light color hint so lanes still feel distinct (kept subtle for clarity).
       ctx.globalCompositeOperation = "source-atop";
-      ctx.globalAlpha = 0.18;
+      ctx.globalAlpha = 0.10;
       ctx.fillStyle = LANES[n.lane].color;
-      ctx.fillRect(x - size / 2, y - size / 2, size, size);
+      ctx.fillRect(-size / 2, -size / 2, size, size);
+
       ctx.restore();
     } else {
       // Sprite missing: minimal fallback (text only).
@@ -765,6 +809,7 @@ for (const n of notes) {
       ctx.fillText(LANES[n.lane].label, x, y);
       ctx.restore();
     }
+
     
   } else {
     const age = t - n.effectTime;
@@ -827,14 +872,14 @@ for (const n of notes) {
 
   // HUD
   ctx.fillStyle = "#fff";
-  ctx.font = "18px Arial";
+  ctx.font = `${18 * UI_SCALE}px Arial`;
   ctx.textAlign = "left";
-  ctx.fillText("Project Baguette", 20, 30);
-  ctx.fillText("Score: " + score, 20, 55);
-  ctx.fillText("Combo: " + combo, 20, 80);
+  ctx.fillText("Project Baguette", 20 * UI_SCALE, 30 * UI_SCALE);
+  ctx.fillText("Score: " + score, 20 * UI_SCALE, 55 * UI_SCALE);
+  ctx.fillText("Combo: " + combo, 20 * UI_SCALE, 80 * UI_SCALE);
 
   if (t - lastHitTime < 0.5 && lastHitText) {
-    ctx.font = "32px Arial Black";
+    ctx.font = `${32 * UI_SCALE}px Arial Black`;
     ctx.textAlign = "center";
     ctx.fillText(lastHitText, width/2, height * 0.2);
   }

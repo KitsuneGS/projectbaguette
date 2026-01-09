@@ -129,13 +129,29 @@ function applyDifficulty() {
   smoothedApproach = APPROACH_TIME;
 }
 
-const MAX_ALIVE_BY_DIFF = { Easy: 1, Normal: 1, Hard: 2, Extreme: 3 };
-const HIT_WINDOW_PERFECT = 0.08;
-const HIT_WINDOW_GOOD = 0.18;
-const HIT_WINDOW_MISS = 0.35;
-const SPAWN_LOOKAHEAD = 8.0;
-const MIN_NOTE_GAP = 0.20; // seconds: keep auto-chart from spawning notes too close together
+const MAX_ALIVE_BY_DIFF = { Easy: 4, Normal: 6, Hard: 8, Extreme: 10 };
 
+// Timing windows in seconds (bigger = more forgiving).
+const HIT_WINDOWS_BY_DIFF = {
+  Easy:    { perfect: 0.11, good: 0.25, miss: 0.45 },
+  Normal:  { perfect: 0.08, good: 0.18, miss: 0.35 },
+  Hard:    { perfect: 0.065, good: 0.15, miss: 0.30 },
+  Extreme: { perfect: 0.055, good: 0.13, miss: 0.27 }
+};
+function getHitWindows() {
+  return HIT_WINDOWS_BY_DIFF[DIFF] || HIT_WINDOWS_BY_DIFF.Normal;
+}
+
+// Auto-chart spacing (seconds) per difficulty.
+const MIN_NOTE_GAP_BY_DIFF = { Easy: 0.28, Normal: 0.22, Hard: 0.18, Extreme: 0.14 };
+function getMinNoteGap() {
+  return MIN_NOTE_GAP_BY_DIFF[DIFF] ?? 0.22;
+}
+
+const SPAWN_LOOKAHEAD = 8.0;
+
+// Turn off receptor/target markers for a cleaner PDiva-ish look.
+const SHOW_RECEPTORS = true; // show target markers (receptors)
 const MISS_EXTRA = 0.20;
 
 const HIT_FADE_TIME = 0.4;
@@ -421,7 +437,7 @@ function generateNotes(t) {
 
     // Enforce a small spacing between generated notes so they don't "machine-gun" spawn.
     const bt = beatTimes[nextBeatIndex];
-    if (bt - lastSpawnedBeatTime < MIN_NOTE_GAP) {
+    if (bt - lastSpawnedBeatTime < getMinNoteGap()) {
       nextBeatIndex++;
       continue;
     }
@@ -459,9 +475,9 @@ function findEarliestLaneNote(lane) {
 function laneIsHittable(note, t) {
   if (!note) return false;
   // Too early
-  if (t < note.time - HIT_WINDOW_GOOD) return false;
+  { const w = getHitWindows(); if (t < note.time - w.good) return false; }
   // Too late (still allow a bit beyond GOOD so late presses don't pick future notes)
-  if (t > note.time + HIT_WINDOW_MISS) return false;
+  { const w = getHitWindows(); if (t > note.time + w.miss) return false; }
   return true;
 }
 
@@ -516,7 +532,7 @@ function hitAt(x, y) {
   for (const n of notes) {
     if (n.judged) continue;
     if (t < n.spawnTime) continue;
-    if (t > n.time + HIT_WINDOW_MISS) continue;
+    if (t > n.time + getHitWindows().miss) continue;
 
     // Current drawn position of the note right now.
     let prog = (t - n.spawnTime) / n.approach;
@@ -541,9 +557,10 @@ function hitAt(x, y) {
 ////////////////////////////////////////////////////////////
 function judge(n, t) {
   const d = Math.abs(n.time - t);
-if (d <= HIT_WINDOW_PERFECT) registerHit(n, "COOL", 300);
-  else if (d <= HIT_WINDOW_GOOD) registerHit(n, "FINE", 100);
-  else if (d <= HIT_WINDOW_MISS) registerMiss(n);
+  const w = getHitWindows();
+  if (d <= w.perfect) registerHit(n, "COOL", 300);
+  else if (d <= w.good) registerHit(n, "FINE", 100);
+  else if (d <= w.miss) registerMiss(n);
 }
 
 function registerHit(n, label, baseScore) {
@@ -580,7 +597,7 @@ let lastFrame = performance.now();
 
 function renderFrame(t) {
 for (let i = 0; i < LANES.length; i++) {
-  LANES[i].pulse = Math.max(0, (LANES[i].pulse || 0) - 0.08);
+  LANES[i].pulse = Math.max(0, (LANES[i].pulse || 0) - 0.05);
 }
    ctx.clearRect(0,0,width,height);
 
@@ -608,31 +625,80 @@ for (let i = 0; i < LANES.length; i++) {
 
   const r = Math.min(width, height) * BASE_R_SCALE;
 
-  // Lane anchors (subtle glow so you can see where to aim).
-  for (let i = 0; i < LANES.length; i++) {
-    const tx = LANES[i].x * width;
-    const ty = LANES[i].y * height;
-    const pulse = 1 + (LANES[i].pulse || 0) * 0.18;
+  if (SHOW_RECEPTORS) {
+    // Target markers ("receptors"): these show where the notes are meant to end up.
+    // We draw:
+    //  - a base ring (always there)
+    //  - a beat ring (breathes with the music)
+    //  - a hit ring (pops when you hit that lane)
+    for (let i = 0; i < LANES.length; i++) {
+      const tx = LANES[i].x * width;
+      const ty = LANES[i].y * height;
 
-    const tint = getTintSprite(i);
-    const white = getWhiteSprite(i);
-    const size = r * 1.9 * pulse;
+      const lanePulse = (LANES[i].pulse || 0); // set in registerHit()
+      const beat = beatPulse; // 0..1-ish
 
-    // If sprite exists, show a faint anchor hint using the tinted version.
-    // If it doesn't exist yet, we just skip the hint (game still works).
-    if (tint) {
+      const baseR = r * 1.15;
+      const beatR = baseR * (1.10 + beat * 0.22);
+      const hitR  = baseR * (1.10 + lanePulse * 0.95);
+
+      // Soft glow halo (stronger than before so it feels "alive")
       ctx.save();
-      ctx.globalAlpha = 0.10 + beatPulse * 0.10;
-      ctx.drawImage(tint, tx - size / 2, ty - size / 2, size, size);
+      ctx.translate(tx, ty);
+      ctx.globalAlpha = 0.55;
+      ctx.shadowColor = LANES[i].color;
+      ctx.shadowBlur = 26 + beat * 16 + lanePulse * 30;
+
+      // Base ring
+      ctx.strokeStyle = "rgba(255,255,255,0.65)";
+      ctx.lineWidth = 3.5 + beat * 1.5;
+      ctx.beginPath();
+      ctx.arc(0, 0, baseR, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // Beat ring (slightly larger + fainter)
+      ctx.globalAlpha = 0.28 + beat * 0.18;
+      ctx.strokeStyle = "rgba(255,255,255,0.75)";
+      ctx.lineWidth = 2.0 + beat * 2.0;
+      ctx.beginPath();
+      ctx.arc(0, 0, beatR, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // Hit ring (pops out then decays via LANES[i].pulse)
+      if (lanePulse > 0.001) {
+        ctx.globalAlpha = Math.min(1, 0.85 * lanePulse + 0.15);
+        ctx.strokeStyle = LANES[i].color;
+        ctx.lineWidth = 4.0 + lanePulse * 6.0;
+        ctx.setLineDash([10, 8]); // dotted ring feels more "game-y"
+        ctx.lineDashOffset = -performance.now() * 0.02;
+        ctx.beginPath();
+        ctx.arc(0, 0, hitR, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
       ctx.restore();
-    } else if (white) {
-      ctx.save();
-      ctx.globalAlpha = 0.08 + beatPulse * 0.08;
-      ctx.drawImage(white, tx - size / 2, ty - size / 2, size, size);
-      ctx.restore();
+
+      // Receptor sprite (white + a tiny tint overlay)
+      const base = getWhiteSprite(i);
+      const tint = getTintSprite(i);
+      const size = r * 2.35 * (1 + lanePulse * 0.20);
+
+      if (base) {
+        ctx.save();
+        ctx.globalAlpha = 0.95;
+        ctx.drawImage(base, tx - size / 2, ty - size / 2, size, size);
+
+        // Slight color hint so lanes still feel distinct.
+        if (tint) {
+          ctx.globalCompositeOperation = "source-atop";
+          ctx.globalAlpha = 0.20 + beat * 0.10;
+          ctx.drawImage(tint, tx - size / 2, ty - size / 2, size, size);
+        }
+        ctx.restore();
+      }
     }
   }
-
 // Notes
 for (const n of notes) {
   // Cull notes until their approach window begins
@@ -809,7 +875,7 @@ function loop() {
 
   for (const n of notes) {
     // If a note is past the miss window, mark it missed so it doesn't block future hits.
-    if (!n.judged && t > n.time + HIT_WINDOW_MISS) {
+    if (!n.judged && t > n.time + getHitWindows().miss) {
       registerMiss(n);
     }
   }

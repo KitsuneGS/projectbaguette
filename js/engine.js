@@ -1,18 +1,4 @@
-/* Project Baguette – Engine (menu-ready wrapper)
-   Adapted from your uploaded main.js (v1.7/v8-P).
-   Changes:
-   - startGame() exported as window.PBEngine.start()
-   - overlay optional via window.__PB_MENU_MODE__
-*/
-
-/* Project Baguette – Rhythm Engine v8-P (Fixed+MV)
-   • ONE tap-to-start overlay (Safari-safe)
-   • MP3-compatible auto-chart
-   • MV only appears after audio begins playing (with play() call)
-   • Debug enabled via ?debug=1
-   • Mobile circles +50% larger
-*/
-
+/* shut yo bitch ass up clanker
 ////////////////////////////////////////////////////////////
 // QUERY DEBUG FLAG
 ////////////////////////////////////////////////////////////
@@ -67,8 +53,6 @@ const BASE_R_SCALE = (isMobile ? 0.10 : 0.045) * UI_SCALE;
 
 
 
-// Scales the whole UI down a bit (HUD + sprites + receptors)
-const UI_SCALE = 0.85;
 ////////////////////////////////////////////////////////////
 // CREATE A SINGLE TAP-TO-START OVERLAY
 ////////////////////////////////////////////////////////////

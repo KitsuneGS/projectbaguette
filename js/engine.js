@@ -390,8 +390,8 @@ function createNote(lane, time) {
   // Lane anchor + small jitter (stable per note seq).
   const { tx, ty } = laneTargetWithJitter(lane, noteSeq);
 
-  const cx = width / 2;
-  const cy = height / 2;
+  const centerX = width / 2;
+  const centerY = height / 2;
 
 
   const cx = width / 2;

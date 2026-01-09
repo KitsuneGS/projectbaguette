@@ -142,32 +142,148 @@ const SPAWN_LOOKAHEAD = 8.0;
 // Offsets are in fractions of the shorter screen dimension (min(width,height)).
 // This avoids nausea (no continuous drifting) but keeps variety.
 const SPAWN_PATTERNS = [
-  [{lane:0,dx:0.00,dy:-0.04,ang:-1.35},{lane:3,dx:0.03,dy:0.00,ang:-0.15},{lane:2,dx:0.00,dy:0.04,ang:1.35},{lane:1,dx:-0.03,dy:0.00,ang:3.00}],
-  [{lane:0,dx:0.00,dy:-0.04,ang:-1.80},{lane:1,dx:-0.03,dy:0.00,ang:-3.00},{lane:2,dx:0.00,dy:0.04,ang:1.80},{lane:3,dx:0.03,dy:0.00,ang:0.15}],
-  [{lane:0,dx:0.00,dy:-0.06,ang:-1.60},{lane:2,dx:0.00,dy:0.06,ang:1.60},{lane:0,dx:0.02,dy:-0.04,ang:-1.25},{lane:2,dx:-0.02,dy:0.04,ang:1.25}],
-  [{lane:1,dx:-0.06,dy:0.00,ang:3.14},{lane:3,dx:0.06,dy:0.00,ang:0.00},{lane:1,dx:-0.04,dy:0.02,ang:2.75},{lane:3,dx:0.04,dy:-0.02,ang:0.35}],
-  [{lane:0,dx:0.00,dy:-0.04,ang:-1.45},{lane:0,dx:0.02,dy:-0.02,ang:-1.10},{lane:3,dx:0.04,dy:0.00,ang:0.00},{lane:3,dx:0.02,dy:0.02,ang:0.35}],
-  [{lane:1,dx:-0.05,dy:-0.02,ang:-2.60},{lane:0,dx:0.00,dy:-0.06,ang:-1.55},{lane:3,dx:0.05,dy:0.02,ang:0.60},{lane:2,dx:0.00,dy:0.06,ang:1.55}],
-  [{lane:0,dx:0.00,dy:-0.05,ang:-1.70},{lane:2,dx:0.00,dy:0.05,ang:1.70},{lane:1,dx:-0.05,dy:0.00,ang:3.14},{lane:3,dx:0.05,dy:0.00,ang:0.00}],
-  [{lane:0,dx:0.01,dy:-0.05,ang:-1.45},{lane:3,dx:0.05,dy:0.00,ang:0.05},{lane:1,dx:-0.05,dy:0.00,ang:3.10}],
-  [{lane:2,dx:0.00,dy:0.05,ang:1.60},{lane:0,dx:0.00,dy:-0.05,ang:-1.60},{lane:2,dx:0.02,dy:0.03,ang:1.25},{lane:0,dx:-0.02,dy:-0.03,ang:-1.25}],
-  [{lane:1,dx:-0.04,dy:0.00,ang:3.14},{lane:0,dx:0.00,dy:-0.04,ang:-1.57},{lane:3,dx:0.04,dy:0.00,ang:0.00},{lane:2,dx:0.00,dy:0.04,ang:1.57}],
+  // 10 snap-to patterns. Each pattern is exactly 8 steps (1 "measure" = 8 notes).
+  // Positions are normalized offsets from center. Keep them small so reading stays easy.
+  // ang controls the direction notes fly in from (radians).
+  [
+    { dx:  0.00, dy: -0.06, ang: -Math.PI / 2 },
+    { dx:  0.06, dy:  0.00, ang:  0.00 },
+    { dx:  0.00, dy:  0.06, ang:  Math.PI / 2 },
+    { dx: -0.06, dy:  0.00, ang:  Math.PI },
+    { dx:  0.04, dy: -0.04, ang: -Math.PI / 4 },
+    { dx:  0.04, dy:  0.04, ang:  Math.PI / 4 },
+    { dx: -0.04, dy:  0.04, ang:  3 * Math.PI / 4 },
+    { dx: -0.04, dy: -0.04, ang: -3 * Math.PI / 4 }
+  ],
+  [
+    { dx: -0.07, dy: -0.02, ang: -3 * Math.PI / 4 },
+    { dx:  0.07, dy: -0.02, ang: -Math.PI / 4 },
+    { dx: -0.07, dy:  0.02, ang:  3 * Math.PI / 4 },
+    { dx:  0.07, dy:  0.02, ang:  Math.PI / 4 },
+    { dx:  0.00, dy: -0.07, ang: -Math.PI / 2 },
+    { dx:  0.07, dy:  0.00, ang:  0.00 },
+    { dx:  0.00, dy:  0.07, ang:  Math.PI / 2 },
+    { dx: -0.07, dy:  0.00, ang:  Math.PI }
+  ],
+  [
+    { dx: -0.06, dy:  0.00, ang:  Math.PI },
+    { dx: -0.03, dy: -0.05, ang: -2.3 },
+    { dx:  0.03, dy: -0.05, ang: -0.8 },
+    { dx:  0.06, dy:  0.00, ang:  0.00 },
+    { dx:  0.03, dy:  0.05, ang:  0.8 },
+    { dx: -0.03, dy:  0.05, ang:  2.3 },
+    { dx:  0.00, dy: -0.07, ang: -Math.PI / 2 },
+    { dx:  0.00, dy:  0.07, ang:  Math.PI / 2 }
+  ],
+  [
+    { dx:  0.00, dy:  0.00, ang:  0.00 },
+    { dx:  0.06, dy: -0.03, ang: -0.2 },
+    { dx:  0.03, dy:  0.06, ang:  1.6 },
+    { dx: -0.06, dy:  0.03, ang:  2.9 },
+    { dx: -0.03, dy: -0.06, ang: -1.6 },
+    { dx:  0.06, dy:  0.03, ang:  0.2 },
+    { dx: -0.06, dy: -0.03, ang: -2.9 },
+    { dx:  0.03, dy: -0.06, ang: -1.6 }
+  ],
+  [
+    { dx: -0.07, dy: -0.04, ang: -2.6 },
+    { dx: -0.07, dy:  0.04, ang:  2.6 },
+    { dx:  0.07, dy: -0.04, ang: -0.5 },
+    { dx:  0.07, dy:  0.04, ang:  0.5 },
+    { dx:  0.00, dy: -0.07, ang: -Math.PI / 2 },
+    { dx: -0.04, dy:  0.00, ang:  Math.PI },
+    { dx:  0.04, dy:  0.00, ang:  0.00 },
+    { dx:  0.00, dy:  0.07, ang:  Math.PI / 2 }
+  ],
+  [
+    { dx:  0.00, dy: -0.07, ang: -Math.PI / 2 },
+    { dx:  0.00, dy: -0.02, ang: -Math.PI / 2 },
+    { dx:  0.00, dy:  0.02, ang:  Math.PI / 2 },
+    { dx:  0.00, dy:  0.07, ang:  Math.PI / 2 },
+    { dx: -0.07, dy:  0.00, ang:  Math.PI },
+    { dx: -0.02, dy:  0.00, ang:  Math.PI },
+    { dx:  0.02, dy:  0.00, ang:  0.00 },
+    { dx:  0.07, dy:  0.00, ang:  0.00 }
+  ],
+  [
+    { dx: -0.05, dy: -0.05, ang: -2.4 },
+    { dx:  0.05, dy: -0.05, ang: -0.7 },
+    { dx:  0.05, dy:  0.05, ang:  0.7 },
+    { dx: -0.05, dy:  0.05, ang:  2.4 },
+    { dx: -0.02, dy: -0.02, ang: -2.4 },
+    { dx:  0.02, dy: -0.02, ang: -0.7 },
+    { dx:  0.02, dy:  0.02, ang:  0.7 },
+    { dx: -0.02, dy:  0.02, ang:  2.4 }
+  ],
+  [
+    { dx: -0.06, dy:  0.00, ang:  Math.PI },
+    { dx: -0.02, dy:  0.00, ang:  Math.PI },
+    { dx:  0.02, dy:  0.00, ang:  0.00 },
+    { dx:  0.06, dy:  0.00, ang:  0.00 },
+    { dx:  0.00, dy: -0.06, ang: -Math.PI / 2 },
+    { dx:  0.00, dy: -0.02, ang: -Math.PI / 2 },
+    { dx:  0.00, dy:  0.02, ang:  Math.PI / 2 },
+    { dx:  0.00, dy:  0.06, ang:  Math.PI / 2 }
+  ],
+  [
+    { dx:  0.00, dy: -0.06, ang: -Math.PI / 2 },
+    { dx:  0.05, dy: -0.02, ang: -0.3 },
+    { dx:  0.07, dy:  0.03, ang:  0.4 },
+    { dx:  0.03, dy:  0.07, ang:  1.2 },
+    { dx: -0.02, dy:  0.05, ang:  2.2 },
+    { dx: -0.07, dy:  0.02, ang:  2.9 },
+    { dx: -0.05, dy: -0.03, ang: -2.8 },
+    { dx: -0.02, dy: -0.07, ang: -1.8 }
+  ],
+  [
+    { dx: -0.03, dy: -0.07, ang: -2.0 },
+    { dx:  0.03, dy: -0.07, ang: -1.1 },
+    { dx:  0.07, dy: -0.03, ang: -0.3 },
+    { dx:  0.07, dy:  0.03, ang:  0.3 },
+    { dx:  0.03, dy:  0.07, ang:  1.1 },
+    { dx: -0.03, dy:  0.07, ang:  2.0 },
+    { dx: -0.07, dy:  0.03, ang:  2.8 },
+    { dx: -0.07, dy: -0.03, ang: -2.8 }
+  ]
 ];
 
-let currentPatternId = (Math.random() * SPAWN_PATTERNS.length) | 0;
-let currentPatternStep = 0;
-let beatsUntilPatternSwap = 0;
+// Pattern selection:
+// - We always spawn 8 notes per "measure" (8 beats).
+// - A new random pattern is chosen each measure.
+// - The first couple steps of a new measure blend from the previous pattern into the new one,
+//   so it feels like a transition instead of a hard snap.
+let measureStep = 0; // 0..7
+let patternPrevId = Math.floor(Math.random() * SPAWN_PATTERNS.length);
+let patternNextId = Math.floor(Math.random() * SPAWN_PATTERNS.length);
+const PATTERN_MEASURE_LEN = 8;
+const PATTERN_BLEND_STEPS = 2;
+
+function lerpAngle(a, b, t) {
+  // Lerp on the shortest arc so angles don't "spin the long way".
+  let d = ((b - a + Math.PI) % (Math.PI * 2)) - Math.PI;
+  return a + d * t;
+}
 
 function nextPatternEntry() {
-  if (beatsUntilPatternSwap <= 0) {
-    currentPatternId = (Math.random() * SPAWN_PATTERNS.length) | 0;
-    currentPatternStep = 0;
-    beatsUntilPatternSwap = 8 + ((Math.random() * 8) | 0); // 8..15
+  // If we're at the start of a measure, pick a new pattern for the next 8 notes.
+  if (measureStep === 0) {
+    patternPrevId = patternNextId;
+    patternNextId = Math.floor(Math.random() * SPAWN_PATTERNS.length);
   }
-  const pat = SPAWN_PATTERNS[currentPatternId];
-  const entry = pat[currentPatternStep % pat.length];
-  currentPatternStep++;
-  beatsUntilPatternSwap--;
+
+  const a = SPAWN_PATTERNS[patternPrevId][measureStep];
+  const b = SPAWN_PATTERNS[patternNextId][measureStep];
+
+  // Blend only for the first few steps of the measure.
+  const blend = measureStep >= PATTERN_BLEND_STEPS ? 1 : (measureStep / PATTERN_BLEND_STEPS);
+
+  const entry = {
+    dx: lerp(a.dx, b.dx, blend),
+    dy: lerp(a.dy, b.dy, blend),
+    ang: lerpAngle(a.ang, b.ang, blend)
+  };
+
+  measureStep = (measureStep + 1) % PATTERN_MEASURE_LEN;
   return entry;
 }
 
@@ -352,6 +468,25 @@ let combo = 0;
 let lastHitText = "";
 let lastHitTime = 0;
 
+// Arcade-style judgement stack (newest first).
+const JUDGE_STACK_MAX = 5;
+const JUDGE_STACK_LIFE = 3.5; // seconds on screen before it fades out
+let judgeStack = [];
+
+function pushJudge(label, lane, comboValue, t) {
+  judgeStack.unshift({
+    label,
+    lane,
+    combo: comboValue,
+    t
+  });
+  if (judgeStack.length > JUDGE_STACK_MAX) judgeStack.length = JUDGE_STACK_MAX;
+
+  // Keep legacy single-line vars in sync (used by a few HUD bits).
+  lastHitText = label;
+  lastHitTime = t;
+}
+
 function addParticles(x, y, color) {
   for (let i = 0; i < 14; i++) {
     particles.push({
@@ -393,80 +528,59 @@ function mulberry32(seed) {
 
 // Notes aim toward a lane "anchor" point, with a small jitter so it feels less rigid.
 // Anchor is decided by lane; jitter is decided by note seq (so it's stable).
-function laneTargetWithJitter(lane, seq, timeSec) {
+function laneTargetWithJitter(lane, seq) {
+  // "Lane home" position with a tiny stable jitter.
+  // We keep this for fallback, but the main gameplay uses snap-to patterns now.
   const minDim = Math.min(width, height);
+  const jitterPx = minDim * 0.008; // tiny (keeps it from feeling nauseating)
 
-  // How far a lane target is allowed to wander around its anchor.
-  // Bigger = less "fixed lanes".
-  const jitterPx = minDim * 0.10;
-
-  // Tiny deterministic random so the same note always gets the same offset.
   const rng = mulberry32((seq + 1) * 1337 + lane * 97);
   const jx = (rng() - 0.5) * 2 * jitterPx;
   const jy = (rng() - 0.5) * 2 * jitterPx;
 
-  // Slow "lane drift" so targets don't feel glued in place.
-  // This is based on timeSec, so different notes (different times) naturally vary.
-  const driftPx = minDim * 0.03;
-  const dx = Math.sin(timeSec * 0.9 + lane * 1.7) * driftPx;
-  const dy = Math.cos(timeSec * 0.7 + lane * 1.1) * driftPx;
-
-  const marginX = width * 0.18;
-  const marginY = height * 0.18;
-
   const ax = LANES[lane].x * width;
   const ay = LANES[lane].y * height;
 
-  // Keep targets in a "middle" band so they don't drift into UI/HUD edges.
-  const tx = Math.max(marginX, Math.min(width - marginX, ax + jx + dx));
-  const ty = Math.max(marginY, Math.min(height - marginY, ay + jy + dy));
+  const marginX = width * 0.18;
+  const marginY = height * 0.18;
+
+  const tx = Math.max(marginX, Math.min(width - marginX, ax + jx));
+  const ty = Math.max(marginY, Math.min(height - marginY, ay + jy));
   return { tx, ty };
 }
 function createNote(lane, time, patternEntry) {
-  // Each note "locks in" its own approach timing at spawn.
-  // This keeps visuals stable even if difficulty changes later.
-
-  // The button you press (lane) is still decided by the chart.
-  // Each note "locks in" its own approach timing at spawn.
-  // This keeps visuals stable even if difficulty changes later.
+  // Each note stores its own approach time at spawn.
   const approach = APPROACH_TIME;
   const spawnTime = time - approach;
 
-  // Lane anchor + small jitter (stable per note seq).
-  const baseT = laneTargetWithJitter(lane, noteSeq, time);
-  let tx = baseT.tx;
-  let ty = baseT.ty;
+  // Snap-to pattern target (same positions for all lanes).
+  // patternEntry is normalized offsets from center.
+  let tx, ty, ang;
 
   if (patternEntry) {
     const minDim = Math.min(width, height);
-    tx += (patternEntry.dx || 0) * minDim;
-    ty += (patternEntry.dy || 0) * minDim;
-  }
+    const centerX = width / 2;
+    const centerY = height / 2;
 
-  const marginX = width * 0.18;
-  const marginY = height * 0.18;
-  tx = Math.max(marginX, Math.min(width - marginX, tx));
-  ty = Math.max(marginY, Math.min(height - marginY, ty));
-
-  const centerX = width / 2;
-  const centerY = height / 2;
-
-
-
-  // Spawn from outside the screen, traveling toward the target.
-  let nx, ny;
-  if (patternEntry && typeof patternEntry.ang === "number") {
-    nx = Math.cos(patternEntry.ang);
-    ny = Math.sin(patternEntry.ang);
+    tx = centerX + patternEntry.dx * minDim;
+    ty = centerY + patternEntry.dy * minDim;
+    ang = patternEntry.ang;
   } else {
-    const dx = tx - centerX;
-    const dy = ty - centerY;
-    const len = Math.hypot(dx, dy) || 1;
-    nx = dx / len;
-    ny = dy / len;
+    // Fallback: lane home (should rarely happen).
+    const tgt = laneTargetWithJitter(lane, noteSeq);
+    tx = tgt.tx;
+    ty = tgt.ty;
+    ang = -Math.PI / 2;
   }
 
-  const spawnDist = Math.max(width, height) * 0.45;
+  // Spawn from off-screen toward the snapped target.
+  const spawnDist = Math.max(width, height) * 0.55;
+
+  const nx = Math.cos(ang);
+  const ny = Math.sin(ang);
+
+  const sx = tx - nx * spawnDist;
+  const sy = ty - ny * spawnDist;
 
   notes.push({
     seq: noteSeq++,
@@ -474,15 +588,14 @@ function createNote(lane, time, patternEntry) {
     time,
     approach,
     spawnTime,
-    spawnX: tx - nx * spawnDist,
-    spawnY: ty - ny * spawnDist,
+    spawnX: sx,
+    spawnY: sy,
     targetX: tx,
     targetY: ty,
     judged: false,
     effect: "none",
     effectTime: 0,
-    shakeSeed: Math.random() * Math.PI * 2,
-    spawned: false
+    shakeSeed: Math.random() * Math.PI * 2
   });
 }
 
@@ -498,24 +611,39 @@ function generateNotes(t) {
   while (nextBeatIndex < beatTimes.length && beatTimes[nextBeatIndex] < t + SPAWN_LOOKAHEAD) {
     if (active >= maxAlive) break;
 
-    // Enforce a small spacing between generated notes so they don't "machine-gun" spawn.
     const bt = beatTimes[nextBeatIndex];
+
+    // Keep a minimum gap so auto-charts don't "machine-gun" even if detection is noisy.
     if (bt - lastSpawnedBeatTime < getMinNoteGap()) {
       nextBeatIndex++;
       continue;
     }
 
-    const entry = nextPatternEntry();
-    const lane = entry.lane;
+    // Pick a lane that isn't "full" for this difficulty.
     const maxPerLane = MAX_ALIVE_PER_LANE_BY_DIFF[DIFF] ?? 1;
+    let lane = -1;
 
-    // If this lane already has too many notes, skip this beat.
-    if (aliveCountInLane(lane) >= maxPerLane) {
-      nextBeatIndex++;
-      continue;
+    // Try a few random lanes first (fast path).
+    for (let tries = 0; tries < 4; tries++) {
+      const cand = Math.floor(Math.random() * LANES.length);
+      if (aliveCountInLane(cand) < maxPerLane) { lane = cand; break; }
     }
 
+    // If random didn't find a lane, scan for any available.
+    if (lane === -1) {
+      for (let cand = 0; cand < LANES.length; cand++) {
+        if (aliveCountInLane(cand) < maxPerLane) { lane = cand; break; }
+      }
+    }
+
+    // If every lane is full, stop spawning for now.
+    if (lane === -1) break;
+
+    // Only advance the pattern when we actually spawn a note.
+    const entry = nextPatternEntry();
     createNote(lane, bt, entry);
+    triggerSpawnFlash(lane);
+
     lastSpawnedBeatTime = bt;
     nextBeatIndex++;
     active++;
@@ -622,34 +750,50 @@ function hitAt(x, y) {
 function judge(n, t) {
   const d = Math.abs(n.time - t);
   const w = getHitWindows();
-  if (d <= w.perfect) registerHit(n, "COOL", 300);
-  else if (d <= w.good) registerHit(n, "FINE", 100);
-  else if (d <= w.miss) registerMiss(n);
+
+  // PDiva-ish labels, derived from our 3 windows.
+  const perfectT = w.perfect * 0.55;              // very tight
+  const coolT    = w.perfect;                     // tight
+  const fineT    = w.good;                        // medium
+  const safeT    = w.good + (w.miss - w.good) * 0.55; // early/late but still "saved"
+  const sadT     = w.miss;                        // barely in window
+
+  if (d <= perfectT) registerHit(n, "PERFECT", 400);
+  else if (d <= coolT) registerHit(n, "COOL", 300);
+  else if (d <= fineT) registerHit(n, "FINE", 150);
+  else if (d <= safeT) registerHit(n, "SAFE", 50);
+  else if (d <= sadT) registerHit(n, "SAD", 10);
+  else registerMiss(n);
 }
 
 function registerHit(n, label, baseScore) {
+  const now = getSongTime();
+
   n.judged = true;
   n.effect = "hit";
-  n.effectTime = getSongTime();
+  n.effectTime = now;
 
   combo++;
   score += Math.floor(baseScore * (1 + combo * 0.05));
 
-  lastHitText = label;
-  lastHitTime = getSongTime();
+  pushJudge(label, n.lane, combo, now);
 
   addParticles(n.targetX, n.targetY, LANES[n.lane].color);
   LANES[n.lane].pulse = 1;
+
+  // Extra "lightshow" kick on hits.
+  spawnFlash = Math.max(spawnFlash, 0.65);
 }
 
 function registerMiss(n) {
+  const now = getSongTime();
+
   n.judged = true;
   n.effect = "miss";
-  n.effectTime = getSongTime();
+  n.effectTime = now;
 
   combo = 0;
-  lastHitText = "MISS";
-  lastHitTime = getSongTime();
+  pushJudge("MISS", n.lane, combo, now);
 }
 
 
@@ -946,27 +1090,55 @@ for (const n of notes) {
   ctx.fillText("Score: " + score, 20 * UI_SCALE, 55 * UI_SCALE);
   ctx.fillText("Combo: " + combo, 20 * UI_SCALE, 80 * UI_SCALE);
 
-  if (t - lastHitTime < 0.5 && lastHitText) {
-    ctx.font = `${32 * UI_SCALE}px Arial Black`;
-    ctx.textAlign = "center";
-    ctx.fillText(lastHitText, width/2, height * 0.2);
-  }
+    // Judgement stack (newest at the top). Stays for a while, then fades out.
+  const stackX = width / 2;
+  const stackY = height * 0.18;
+  const lineH = 38 * UI_SCALE;
 
-  if (DEBUG) {
-    ctx.fillStyle = "rgba(0,0,0,0.6)";
-    ctx.fillRect(width - 200, 10, 180, 100);
+  ctx.save();
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
 
-    ctx.fillStyle = "#0f0";
-    ctx.font = "14px monospace";
-    ctx.textAlign = "left";
-    ctx.fillText(`FPS: ${fps.toFixed(1)}`, width - 190, 30);
-    ctx.fillText(`Time: ${t.toFixed(3)}s`, width - 190, 50);
-    ctx.fillText(`Beats: ${beatTimes.length}`, width - 190, 70);
-    ctx.fillText(`Idx: ${nextBeatIndex}`, width - 190, 90);
+  for (let i = 0; i < judgeStack.length; i++) {
+    const it = judgeStack[i];
+    const age = t - it.t;
+    if (age > JUDGE_STACK_LIFE) continue;
+
+    // Fade during the last ~25% of the lifetime.
+    const fadeStart = JUDGE_STACK_LIFE * 0.75;
+    const a = age <= fadeStart ? 1 : Math.max(0, 1 - (age - fadeStart) / (JUDGE_STACK_LIFE - fadeStart));
+
+    const y = stackY + i * lineH;
+
+    ctx.save();
+    ctx.globalAlpha = a;
+
+    // Pixel-ish arcade font if available; falls back safely.
+    ctx.font = `${Math.floor(40 * UI_SCALE)}px "Pixel Game Font Family", "Pixel Game Font", "Press Start 2P", Arial Black, sans-serif`;
+    ctx.lineWidth = 6 * UI_SCALE;
+    ctx.strokeStyle = "rgba(0,0,0,0.70)";
+    ctx.fillStyle = "#ffffff";
+
+    ctx.strokeText(it.label, stackX, y);
+    ctx.fillText(it.label, stackX, y);
+
+    // Combo (only show on the newest entry, and only if combo > 0)
+    if (i === 0 && it.combo > 0) {
+      ctx.font = `${Math.floor(18 * UI_SCALE)}px "Pixel Game Font Family", "Pixel Game Font", "Press Start 2P", Arial Black, sans-serif`;
+      ctx.lineWidth = 5 * UI_SCALE;
+      ctx.strokeStyle = "rgba(0,0,0,0.70)";
+      ctx.fillStyle = "#ffffff";
+      const comboText = `${it.combo} COMBO`;
+      ctx.strokeText(comboText, stackX, y + 30 * UI_SCALE);
+      ctx.fillText(comboText, stackX, y + 30 * UI_SCALE);
+    }
+
+    ctx.restore();
   }
+  ctx.restore();
+
+
 }
-
-
 ////////////////////////////////////////////////////////////
 // MAIN LOOP
 ////////////////////////////////////////////////////////////
@@ -997,6 +1169,9 @@ function loop() {
     if (n.effect === "miss") return age <= MISS_FADE_TIME;
     return false;
   });
+
+  // Drop expired judgement lines so the stack stays clean.
+  judgeStack = judgeStack.filter(it => (t - it.t) <= JUDGE_STACK_LIFE);
 
   requestAnimationFrame(loop);
 }

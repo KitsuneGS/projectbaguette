@@ -394,12 +394,10 @@ function createNote(lane, time) {
   const centerY = height / 2;
 
 
-  const cx = width / 2;
-  const cy = height / 2;
 
   // Spawn from outside the screen, traveling toward the target.
-  const dx = tx - cx;
-  const dy = ty - cy;
+  const dx = tx - centerX;
+  const dy = ty - centerY;
   const len = Math.hypot(dx, dy) || 1;
   const nx = dx / len;
   const ny = dy / len;
@@ -809,7 +807,6 @@ for (const n of notes) {
       }
       ctx.restore();
       ctx.globalAlpha = 1;
-    }
     }
   }
 }

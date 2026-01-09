@@ -41,3 +41,17 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+
+      - name: Notify Discord (always)
+        if: always()
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          STATUS="${{ job.status }}"
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          curl -H "Content-Type: application/json" \
+            -d "{\"content\":\"Workflow **${{ github.workflow }}** finished with **$STATUS** on **${{ github.ref_name }}**.\n$RUN_URL\"}" \
+            "$DISCORD_WEBHOOK_URL"
+
+
+  
